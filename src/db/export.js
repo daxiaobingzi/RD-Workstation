@@ -137,6 +137,15 @@ export function buildCsvBlob (text) {
   return new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' })
 }
 
+/** 按系统拆分清单导出的 Sheet 列表：第 1 个为报价汇总，之后每个系统一个 Sheet */
+export function buildBillSheetsBySub (billRows, buildRowsFor, quoteRows) {
+  const bySub = {}
+  billRows.forEach(r => { const s = r.sub || '未分类'; (bySub[s] = bySub[s] || []).push(r) })
+  const sheets = quoteRows && quoteRows.length ? [{ name: '报价汇总', rows: quoteRows }] : []
+  Object.keys(bySub).forEach(sub => sheets.push({ name: sub, rows: buildRowsFor(bySub[sub]) }))
+  return sheets
+}
+
 export function buildTxtBlob (text) {
   return new Blob([text], { type: 'text/plain;charset=utf-8' })
 }

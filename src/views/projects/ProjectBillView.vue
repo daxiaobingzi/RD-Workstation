@@ -7,7 +7,7 @@ import { fmtNum } from '../../db/format'
 import { useLayout } from '../../composables/layout'
 import { openDialog } from '../../composables/ui'
 import { rowsToCSV, rowsToTSV } from '../../db/calc'
-import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText } from '../../db/export'
+import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText, buildBillSheetsBySub } from '../../db/export'
 import VIcon from '../../components/ui/VIcon.vue'
 import BillHistoryDialog from '../../components/dialogs/BillHistoryDialog.vue'
 
@@ -102,12 +102,9 @@ const ConfirmDiff = {
 
 async function exportXlsx () {
   if (!billRows.value) return
-  const sheets = [
-    { name: '设备材料清单', rows: store.buildBillRows(store, p.value, billRows.value) },
-    { name: '报价汇总', rows: quote.value?.rows || [] }
-  ]
+  const sheets = buildBillSheetsBySub(billRows.value, subRows => store.buildBillRows(store, p.value, subRows), quote.value?.rows || [])
   await downloadBlob(`施工清单-${p.value.项目编号 || p.value.项目名称}-${new Date().toISOString().slice(0, 10)}.xlsx`, buildXlsx(sheets))
-  store.toast('已导出 Excel')
+  store.toast(`已导出 Excel（${sheets.length} 个 Sheet：报价汇总 + 各系统清单）`)
 }
 async function exportCSV () {
   if (!billRows.value) return

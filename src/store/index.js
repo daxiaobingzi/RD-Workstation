@@ -12,7 +12,7 @@ import {
   buildBillRows, rowsToCSV, rowsToTSV,
   ensureDeviceChain, deriveChain, chainFormulaText, chainSourceLabel, isChainDevice
 } from '../db/calc'
-import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText } from '../db/export'
+import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText, buildBillSheetsBySub } from '../db/export'
 
 function lsSet (k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch (e) {} }
 
@@ -862,11 +862,19 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // ---------- 导出（清单 / 点表） ----------
+  /** 删除某项目的一条历史清单 */
+  function deleteBill (pid, billId) {
+    const list = normalizeBillList(bills.value[pid])
+    const idx = list.findIndex(b => b.id === billId)
+    if (idx < 0) return false
+    list.splice(idx, 1)
+    if (list.length) bills.value[pid] = list
+    else delete bills.value[pid]
+    return true
+  }
+
   async function exportBillXlsx (p, bill) {
-    const sheets = [
-      { name: '设备材料清单', rows: buildBillRows(stateRef(), p, bill) },
-      { name: '报价汇总', rows: quoteRowsFor(p).rows }
-    ]
+    const sheets = buildBillSheetsBySub(bill, subRows => buildBillRows(stateRef(), p, subRows), quoteOfBill(p, bill).rows)
     const blob = buildXlsx(sheets)
     await downloadBlob(`施工清单-${p.项目编号 || p.项目名称}-${todayStr()}.xlsx`, blob)
   }
@@ -950,7 +958,7 @@ export const useAppStore = defineStore('app', () => {
     // 说明
     saveNote,
     // 清单
-    prepareBill, commitBill, setBillViewCache, computeBill,
+    prepareBill, commitBill, setBillViewCache, computeBill, deleteBill,
     // 设备
     addDevice, saveDevice, deleteDevice, copyDevice, moveDevice, resolveDevice,
     // 推导链
