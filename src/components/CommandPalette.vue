@@ -4,6 +4,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../store'
 import { openDialog } from '../composables/ui'
+import { styleStudio } from '../composables/style'
 import VIcon from './ui/VIcon.vue'
 import ProjectFormDialog from './dialogs/ProjectFormDialog.vue'
 import BootstrapProjectDialog from './dialogs/BootstrapProjectDialog.vue'
@@ -17,13 +18,15 @@ const q = ref('')
 const active = ref(0)
 const inputEl = ref(null)
 
-const theme = ref(document.documentElement.getAttribute('data-theme') || (window.localStorage.getItem('wb_theme') || 'dark'))
+// 与 ThemeSwitch 共用同一主题 key（wb_elv_theme），并联动风格引擎明暗重放
+const theme = ref(document.documentElement.getAttribute('data-theme') || (window.localStorage.getItem('wb_elv_theme') || 'light'))
 
 function switchTheme () {
   const next = theme.value === 'dark' ? 'light' : 'dark'
   theme.value = next
   document.documentElement.setAttribute('data-theme', next)
-  window.localStorage.setItem('wb_theme', next)
+  try { window.localStorage.setItem('wb_elv_theme', next) } catch (e) {}
+  styleStudio.reapply()
 }
 
 // 命令列表（每组：action + label + desc + hotkey）

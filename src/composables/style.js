@@ -69,14 +69,39 @@ function themeNow () {
   return r.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
 }
 
-// 风格 → 对应主题变量集
+// 风格 → 对应主题变量集（缺省时从当前计算样式兜底，保证 liquid-glass 等空变量基底可继承）
 function varsOf (id, theme) {
   const t = theme || themeNow()
   const preset = PRESET_STYLES.find(p => p.id === id)
-  if (preset) return preset[t] || preset.light || {}
+  if (preset) {
+    const v = preset[t] || preset.light || {}
+    if (Object.keys(v).length) return v
+    return computedRootVars(t)
+  }
   const custom = customStyles.value.find(c => c.id === id)
-  if (custom) return custom[t] || custom.light || {}
-  return {}
+  if (custom) {
+    const v = custom[t] || custom.light || {}
+    if (Object.keys(v).length) return v
+    return computedRootVars(t)
+  }
+  return computedRootVars(t)
+}
+
+// 从 :root 计算样式读取当前生效的完整变量表（用于继承基底的兜底）
+function computedRootVars (theme) {
+  const r = root()
+  if (!r) return {}
+  // 临时切换主题属性以读取对应主题变量（不修改持久化）
+  const prev = r.getAttribute('data-theme')
+  r.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
+  const rs = window.getComputedStyle(r)
+  const out = {}
+  ALL_VAR_KEYS.forEach(k => {
+    const v = rs.getPropertyValue(k).trim()
+    if (v) out[k] = v
+  })
+  r.setAttribute('data-theme', prev || 'light')
+  return out
 }
 
 // 风格元信息（供 UI 展示）
