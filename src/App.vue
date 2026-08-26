@@ -28,9 +28,32 @@ function readSb () {
   try { return localStorage.getItem(SB_KEY) !== '0' } catch (e) { return true }
 }
 sbOpen.value = readSb()
+
+// ---- 跨端适配：平板/手机 判定（<1024px 均视为紧凑布局，iPad 不再误判为桌面）----
+const isCompact = ref(false)
+// 抽屉语义：平板/手机上侧栏收进抽屉，need 用独立状态避免与桌面折叠混淆
+const sbDrawerOpen = ref(false)
+const mqCompact = window.matchMedia('(max-width: 1023px)')
+function applyCompact (e) {
+  isCompact.value = e.matches
+  // 进入紧凑布局时关闭桌面式折叠记忆，抽屉默认关闭
+  sbDrawerOpen.value = false
+  if (e.matches) sbOpen.value = false
+}
+isCompact.value = mqCompact.matches
+// 紧凑布局下侧栏初始为抽屉关闭态（覆盖桌面折叠记忆）
+if (isCompact.value) { sbOpen.value = false; sbDrawerOpen.value = false }
+const onMqChange = applyCompact
+if (mqCompact.addEventListener) mqCompact.addEventListener('change', onMqChange)
+else if (mqCompact.addListener) mqCompact.addListener(onMqChange)
+// 兼容第三方组件/旧代码对 toggleSb 的引用，统一指向带抽屉语义的版本
 function toggleSb () {
-  sbOpen.value = !sbOpen.value
-  try { localStorage.setItem(SB_KEY, sbOpen.value ? '1' : '0') } catch (e) {}
+  if (isCompact.value) {
+    sbDrawerOpen.value = !sbDrawerOpen.value
+  } else {
+    sbOpen.value = !sbOpen.value
+    try { localStorage.setItem(SB_KEY, sbOpen.value ? '1' : '0') } catch (e) {}
+  }
 }
 
 const NAV = [
@@ -101,16 +124,25 @@ onMounted(() => {
   initStyleStudio()
   window.addEventListener('keydown', onKeydown)
 })
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  if (mqCompact.removeEventListener) mqCompact.removeEventListener('change', onMqChange)
+  else if (mqCompact.removeListener) mqCompact.removeListener(onMqChange)
+})
 </script>
 
 <template>
-  <div class="app" :class="{ 'sb-collapsed': !sbOpen }">
-    <!-- 折叠后的展开按钮 -->
-    <button v-if="!sbOpen" class="sb-expand" title="展开侧边栏" @click="toggleSb"><VIcon name="list" :size="18" /></button>
+  <div class="app" :class="{ 'sb-collapsed': !isCompact && !sbOpen, 'sb-drawer': isCompact }">
+    <!-- 折叠后的展开按钮（桌面；平板/手机上由顶栏汉堡触发） -->
+    <button v-if="!sbOpen && !isCompact" class="sb-expand" title="展开侧边栏" @click="toggleSb"><VIcon name="list" :size="18" /></button>
 
-    <!-- PC 侧边栏：玻璃浮动面板（可折叠） -->
-    <aside class="sidebar" :class="{ open: sbOpen }">
+    <!-- 平板/手机：顶栏汉堡按钮 -->
+    <button v-if="isCompact" class="sb-drawer-toggle" title="菜单" @click="toggleSb"><VIcon name="list" :size="22" /></button>
+    <!-- 平板/手机：侧栏抽屉遮罩 -->
+    <div v-if="isCompact && sbDrawerOpen" class="sb-mask" @click="toggleSb"></div>
+
+    <!-- PC 侧边栏：玻璃浮动面板（可折叠）；平板/手机会变装为抽屉 -->
+    <aside class="sidebar" :class="{ open: sbOpen, drawer: isCompact }">
       <div class="sb-collapse" title="收起侧边栏" @click="toggleSb"><VIcon name="x" :size="14" /></div>
       <div class="brand">
         <div class="brand-logo"><VIcon name="zap" :size="20" /></div>

@@ -412,7 +412,16 @@ table.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px;
 .dialog-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px}
 .dialog-head h3{font-size:17px;font-weight:700;color:var(--strong-text);letter-spacing:-.01em}
 .dialog-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
-@media(min-width:640px){.mask{align-items:center}.mask .dialog{border-radius:30px}}
+@media(min-width:640px){
+  .mask{align-items:center}
+  .mask .dialog{border-radius:30px;align-self:center}
+}
+/* 平板（768–1023px）与手机共用底部抽屉式弹窗；桌面（≥1024 由上面 min-width 处理） */
+@media(max-width:1023px){
+  .mask .dialog{max-width:min(720px, 96vw);max-height:92dvh;padding:20px 18px 26px}
+  .mask .dialog .dialog-foot{position:sticky;bottom:0}
+  .toast{bottom:calc(16px + env(safe-area-inset-bottom))}
+}
 
 /* Toast */
 .toast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%);background:var(--glass-3);border:1px solid var(--glass-edge);color:var(--text);padding:13px 22px;border-radius:999px;font-size:14px;font-weight:600;
@@ -484,27 +493,83 @@ table.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px;
 .ph-actions{display:flex;gap:8px}
 @media(max-width:767px){.ph-stats{gap:12px}.ph-stat b{font-size:17px}.ph-name{font-size:16px}}
 
-/* 移动端 */
-@media(max-width:767px){
-  .main{margin-left:0;padding:18px 16px 96px}
+/* ===== 跨端三档适配 =====
+   手机 <768 · 平板/iPad 768–1023 · 桌面 ≥1024（默认）
+   iPad 可能上报 pointer:fine 且有 hover，因此用宽度断点强制走触屏布局，避免误判桌面导致错位。 */
+@media(max-width:1023px){
+  /* 内容区不再为侧栏让位 */
+  .main{margin-left:0;padding:22px 20px 96px;}
   .app.sb-collapsed .main{margin-left:0}
-  .sidebar{display:none}
+  /* 桌面折叠展开按钮隐藏，改用汉堡 */
   .sb-expand{display:none}
+  /* 汉堡按钮（顶栏固定，44×44 热区） */
+  .sb-drawer-toggle{position:fixed;right:14px;top:calc(10px + env(safe-area-inset-top));z-index:29;width:44px;height:44px;border-radius:14px;
+    display:inline-flex;align-items:center;justify-content:center;color:var(--text);background:var(--glass-2);
+    border:1px solid var(--glass-edge);box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+  /* 侧栏变装为左侧抽屉 */
+  .sidebar{position:fixed;inset:0 auto 0 0;margin:0;width:min(300px,86vw);height:100%;border-radius:0 26px 26px 0;z-index:60;
+    transform:translateX(-105%);transition:transform .32s cubic-bezier(.34,1.3,.5,1);opacity:1;pointer-events:auto;display:flex;flex-direction:column}
+  .sidebar.drawer.open{transform:translateX(0)}
+  .sidebar:not(.open){transform:translateX(-105%)}
+  /* 抽屉遮罩 */
+  .sb-mask{position:fixed;inset:0;z-index:55;background:rgba(15,23,42,.42);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:maskIn .25s ease both}
+  @keyframes maskIn{from{opacity:0}to{opacity:1}}
+  /* 底部导航：平板/手机均显示 */
   .m-nav{display:flex;position:fixed;bottom:12px;left:12px;right:12px;background:var(--mnav-bg);backdrop-filter:blur(30px) saturate(1.8);-webkit-backdrop-filter:blur(30px) saturate(1.8);
-    border:1px solid var(--glass-edge);border-radius:24px;box-shadow:var(--shadow-lg);
-    z-index:40;padding:7px;gap:2px}
-  .m-nav .nav-item{flex:1;flex-direction:column;gap:3px;padding:8px 4px;font-size:11px;border-radius:15px;justify-content:center;color:var(--text2)}
+    border:1px solid var(--glass-edge);border-radius:24px;box-shadow:var(--shadow-lg);z-index:40;padding:7px;gap:2px}
+  .m-nav .nav-item{flex:1;flex-direction:column;gap:3px;padding:9px 4px;font-size:11px;border-radius:15px;justify-content:center;color:var(--text2);min-height:50px}
   .m-nav .nav-item.active{background:var(--primary-l);color:var(--primary)}
+  /* 卡片/网格自适应 */
+  .grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .ph-stats{gap:14px}
+  .ph-stat b{font-size:18px}
+  .topbar h1{font-size:24px}
+  /* 给右上角汉堡让位 */
+  .topbar{padding-right:48px}
+  .topbar .theme-switch{margin-left:auto}
+  /* 表格：横向滚动 + 触屏惯性滚动 */
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .tbl-wrap::-webkit-scrollbar{height:8px}
+  /* 页签可横向滑 */
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{min-height:44px;flex-shrink:0}
+}
+/* 手机 <768：进一步收紧 */
+@media(max-width:767px){
+  .main{padding:16px 14px 120px}
   .grid{grid-template-columns:1fr}
   .topbar h1{font-size:23px}
   .today-item .info{min-width:0}
   .bill-sum{grid-template-columns:repeat(2,1fr)}
   .theme-switch button span{display:none}
-  .theme-switch button{padding:7px 10px}
+  .theme-switch button{padding:8px 11px;min-height:44px}
+  .topbar{flex-direction:column;align-items:stretch;gap:10px;margin-bottom:14px}
+  .topbar h1{order:-1}
+  .topbar-actions{justify-content:flex-end;margin-left:0;flex-wrap:wrap}
+  .toolbar{flex-wrap:wrap}
+  .sys-ops{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .sys-ops::-webkit-scrollbar{display:none}
+  .dialog .op{flex-wrap:wrap}
+  /* 项目头堆叠 */
+  .proj-head-card{flex-wrap:wrap;gap:12px}
+  .ph-stats{margin-left:0;width:100%;justify-content:flex-start}
+  /* 推导链节点纵向对齐 */
+  .chain-node .node-body{flex-wrap:wrap}
+  .node-info{min-width:100%}
+  .node-fml{white-space:normal;width:100%}
 }
+/* 触屏（含 iPad 触屏，指针粗细皆可）→ 通用热区抬升，不依赖 hover */
 @media(pointer:coarse){
-  .main button{min-height:44px}
+  .main button, .main .btn, .main [role="button"], .main .nav-item{min-height:44px;touch-action:manipulation}
   .m-nav .nav-item{min-height:54px}
+  .tab, .chip, .card-title button{min-height:44px}
+  .tbl .op button{width:40px;height:40px}
+}
+/* 缩小触屏上的按压反馈，替代 hover（防止悬停才出操作列导致失效） */
+@media(pointer:coarse) and (max-width:1023px){
+  .tbl tbody tr:hover td,.tbl tbody tr:hover td:first-child{background:transparent;box-shadow:none}
+  .tbl .op{justify-content:flex-start;gap:6px}
 }
 
 /* 全局入场动效：玻璃元素浮起 */
