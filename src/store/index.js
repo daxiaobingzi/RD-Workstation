@@ -620,6 +620,17 @@ export const useAppStore = defineStore('app', () => {
     return { added, upd }
   }
 
+  /** 按设备批量删除点表行（批量添加弹窗内的批量删除） */
+  function deletePointsOfDevices (pid, sub, devIds) {
+    const set = new Set(devIds)
+    const names = new Set()
+    devices.value.filter(d => set.has(d.id)).forEach(d => names.add(d.name))
+    const before = points.value.length
+    points.value = points.value.filter(x =>
+      !(x.项目ID === pid && x.子系统 === sub && (set.has(x['设备ID']) || names.has(x.设备类型))))
+    return before - points.value.length
+  }
+
   function parsePointCSV (text) {
     const rows = []
     String(text || '').split(/\r?\n/).forEach((line, i) => {
@@ -953,7 +964,7 @@ export const useAppStore = defineStore('app', () => {
     applyTemplate, saveProjectAsTemplate, deleteTemplate, bootstrapFromTemplate, cloneScaledProject,
     bulkAdjustPoints,
     // 点位
-    addPoint, savePoint, deletePoint, buildBringOut, batchSavePoints,
+    addPoint, savePoint, deletePoint, buildBringOut, batchSavePoints, deletePointsOfDevices,
     importPointsCSV, autoQtyImpact, applyAutoQty,
     // 说明
     saveNote,

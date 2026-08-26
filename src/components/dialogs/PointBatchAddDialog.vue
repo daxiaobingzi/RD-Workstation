@@ -6,6 +6,7 @@
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../../store'
+import { confirmBox } from '../../composables/ui'
 import ModalBase from '../ui/ModalBase.vue'
 import VIcon from '../ui/VIcon.vue'
 
@@ -39,6 +40,7 @@ build()
 
 const pickedN = computed(() => rows.value.filter(r => r.picked).length)
 const allPicked = computed(() => rows.value.length > 0 && rows.value.every(r => r.picked))
+const delCandidates = computed(() => rows.value.filter(r => r.picked && r.cur > 0))
 function toggleAll () { const v = !allPicked.value; rows.value.forEach(r => { r.picked = v }) }
 function pickOnlyMissing () { rows.value.forEach(r => { r.picked = !r.cur }) }
 function clearPicks () { rows.value.forEach(r => { r.picked = false }) }
@@ -62,11 +64,24 @@ async function apply () {
   emit('close')
   store.toast(`已批量写入点表：新增 ${res.added} 条，更新 ${res.upd} 条`)
 }
+
+// 批量删除：勾选中"已录入"的设备，从点表移除对应行
+async function applyDelete () {
+  const list = delCandidates.value
+  if (!list.length) { store.toast('请先勾选要删除的设备（需已录入点位）'); return }
+  const total = list.reduce((a, r) => a + (Number(r.cur) || 0), 0)
+  const ok = await confirmBox(`从点表删除以下 ${list.length} 台设备的点位行（合计数量 ${total}）？\n${list.slice(0, 8).map(r => r.name + ' ×' + r.cur).join('、')}${list.length > 8 ? '…' : ''}`, '批量删除点表行')
+  if (!ok) return
+  const n = store.deletePointsOfDevices(props.project.id, props.sub, list.map(r => r.devId))
+  await store.saveAll()
+  if (n) build()
+  store.toast(n ? `已从点表删除 ${n} 行（${list.length} 台设备）` : '未删除任何行（可能已被移除）')
+}
 </script>
 
 <template>
   <ModalBase :title="'批量添加 / 更新点位 · ' + sub" width="780px" @close="emit('close')">
-    <div class="hint" style="margin-bottom:10px">勾选设备即写入点表；未录入的默认数量 1，已录入的显示当前数量可直接改（= 批量更新）。无需逐个点「添加点位」。</div>
+    <div class="hint" style="margin-bottom:10px">勾选设备即写入点表；未录入的默认数量 1，已录入的显示当前数量可直接改（= 批量更新）。勾选「已录入」设备后用底部「删除所选」可从点表移除，无需逐个删除。</div>
 
     <!-- 快捷操作 -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
@@ -105,6 +120,7 @@ async function apply () {
 
     <template #foot>
       <button class="btn btn-ghost" @click="emit('close')">取消</button>
+      <button class="btn btn-danger" :disabled="!delCandidates.length" @click="applyDelete"><VIcon name="trash" />删除所选（{{ delCandidates.length }} 台已录入）</button>
       <button class="btn btn-primary" @click="apply"><VIcon name="save" />写入点表（{{ pickedN }} 台）</button>
     </template>
   </ModalBase>
