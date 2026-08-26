@@ -154,6 +154,7 @@ async function save () {
     <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="addQuotaRow"><VIcon name="plus" />添加定额材料</button>
 
     <div class="card-title" style="margin-top:14px">品牌与价格 <span class="sub">一行=品牌+型号+配置档次+参数+单价</span></div>
+    <div class="hint" style="margin-bottom:8px">与「价格工作台」共用同一份数据：此处保存的信息在价格工作台「{{ sub }}」对应设备分组下同步可见、可继续维护。</div>
     <div class="tbl-wrap">
       <table class="tbl">
         <thead><tr><th>品牌</th><th>型号</th><th>配置档次</th><th>参数</th><th>单价(元)</th><th></th></tr></thead>

@@ -24,40 +24,37 @@ const { devices, devBrands, settings } = storeToRefs(store)
 const expanded = ref({}) // deviceId -> bool
 const filterTxt = ref('')
 
-// ---- 数据层：设备 + 其型号行 ----
+// ---- 数据层：行直接绑定 devBrands（与设备字典共用同一份数据，即时双向同步）----
 const groups = computed(() => {
   const kw = filterTxt.value.trim().toLowerCase()
   return devices.value
     .filter(d => d.subsystem === props.dbSub && d.status !== '归档')
     .filter(d => !kw || d.name.toLowerCase().includes(kw) || (d.spec || '').toLowerCase().includes(kw))
     .map(d => {
-      const variants = (store.devBrands[d.id] || []).map(v => ({
-        key: v.id || mkKey(), brand: v.brand || '', model: v.model || '', tier: v.tier || '标准型',
-        param: v.param || '', unitPrice: v.unitPrice != null ? v.unitPrice : ''
-      }))
-      if (!variants.length) variants.push(emptyRow(d))
+      const variants = store.devBrands[d.id] || []
       const priced = variants.filter(v => v.brand && v.unitPrice !== '' && v.unitPrice != null).length
-      const badParam = variants.filter(v => v.brand && !v.param.trim()).length
-      const missingBrand = variants.filter(v => !v.brand.trim()).length
+      const badParam = variants.filter(v => v.brand && !v.param).length
+      const missingBrand = variants.filter(v => !v.brand).length
       return { device: d, variants, priced, total: variants.length, badParam, missingBrand }
     })
 })
+function ensureLists () {
+  devices.value.filter(d => d.subsystem === props.dbSub && d.status !== '归档').forEach(d => {
+    if (!store.devBrands[d.id]) store.devBrands[d.id] = []
+  })
+}
 const allExpanded = computed(() => groups.value.every(g => expanded.value[g.device.id]))
 function toggle (id) { expanded.value[id] = !expanded.value[id] }
 function expandAll (v) { groups.value.forEach(g => { expanded.value[g.device.id] = v }) }
 
-function emptyRow (d) {
-  return { key: mkKey(), brand: '', model: '', tier: '标准型', param: '', unitPrice: '' }
+function mkId () { return 'bm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }
+function addVariant (id) {
+  ensureLists()
+  store.devBrands[id].push({ id: mkId(), brand: '', model: '', tier: '标准型', param: '', unitPrice: '' })
+  expanded.value[id] = true
 }
-function mkKey () { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }
-
-function addVariant (g) {
-  g.variants.push(emptyRow(g.device))
-  expanded.value[g.device.id] = true
-}
-function removeRow (g, i) {
-  g.variants.splice(i, 1)
-  if (!g.variants.length) g.variants.push(emptyRow(g.device))
+function removeRow (id, i) {
+  if (store.devBrands[id]) store.devBrands[id].splice(i, 1)
 }
 
 // ---- 品牌池联动 ----
@@ -78,9 +75,6 @@ async function importAllToPool () {
   await store.saveAll()
   store.toast(`已将 ${unknownBrands.value.length} 个散落品牌加入品牌池`)
 }
-function onBrandInput (g, v, val) {
-  v.brand = val
-}
 
 // ---- 统计数据 ----
 const stats = computed(() => {
@@ -94,42 +88,32 @@ const stats = computed(() => {
   return { total, priced, missing, noParam, devices: groups.value.length }
 })
 
-// ---- 保存 ----
+// ---- 保存：行已即时写入 store，这里做唯一性校验 + 落盘 ----
 async function save () {
-  const map = {}
-  groups.value.forEach(g => {
-    const list = g.variants
-      .filter(v => v.brand.trim() || v.model.trim())
-      .map(v => ({ id: v.key.startsWith('r') ? undefined : v.key, brand: v.brand.trim(), model: v.model.trim(), tier: v.tier || '标准型', param: v.param.trim(), unitPrice: v.unitPrice !== '' && v.unitPrice != null ? Number(v.unitPrice) : null }))
-    if (list.length) map[g.device.id] = list
-  })
-  // 品牌+型号唯一性（同设备下）
-  for (const did of Object.keys(map)) {
+  ensureLists()
+  for (const d of devices.value.filter(x => x.subsystem === props.dbSub && x.status !== '归档')) {
     const seen = new Set()
-    for (const v of map[did]) {
+    for (const v of store.devBrands[d.id] || []) {
       if (!v.brand) continue
       const key = v.brand + '|' + v.model
-      if (seen.has(key)) { store.toast(`品牌+型号重复：${nameOf(did)} → ${v.brand} ${v.model}`); return }
+      if (seen.has(key)) { store.toast(`品牌+型号重复：${d.name} → ${v.brand} ${v.model}`); return }
       seen.add(key)
     }
   }
-  const next = { ...store.devBrands }
-  const inSub = devices.value.filter(d => d.subsystem === props.dbSub)
-  inSub.forEach(d => {
-    if (map[d.id]) {
-      next[d.id] = map[d.id].map(v => ({ ...v, id: v.id || 'bm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }))
-    } else if (next[d.id] !== undefined) {
-      delete next[d.id]
-    }
-  })
-  store.devBrands = next
   await store.saveAll()
-  store.toast(`价格已保存：${inSub.length} 台设备品牌价格已更新`)
+  store.toast('价格已保存')
 }
 function nameOf (id) {
   const d = devices.value.find(x => x.id === id)
   return d ? d.name : id
 }
+
+// ---- 改动即时落盘（防抖 800ms），无需手动保存 ----
+let saveTimer = null
+watch(devBrands, () => {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => { store.saveAll() }, 800)
+}, { deep: true })
 
 // ---- 批量粘贴导入（按设备名归位到组内，直接写入 devBrands）----
 function openPaste () {
@@ -196,7 +180,7 @@ function onKey (e) {
 }
 onMounted(() => document.addEventListener('keydown', onKey, true))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
-watch(() => props.dbSub, () => { expanded.value = {} }, { immediate: true })
+watch(() => props.dbSub, () => { ensureLists(); expanded.value = {} }, { immediate: true })
 </script>
 
 <template>
@@ -228,19 +212,20 @@ watch(() => props.dbSub, () => { expanded.value = {} }, { immediate: true })
     <!-- 展开控制 -->
     <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
       <button class="btn btn-ghost btn-sm" @click="expandAll(!allExpanded)"><VIcon :name="allExpanded ? 'up' : 'down'" />{{ allExpanded ? '全部收起' : '全部展开' }}</button>
-      <span class="hint">Ctrl+S 或「保存」提交</span>
+      <span class="hint">改动即时生效并自动保存 · Ctrl+S 或「保存」可立即落盘</span>
     </div>
 
     <!-- 设备分组折叠卡片 -->
     <div v-for="g in groups" :key="g.device.id" class="pw-group" :class="{ open: expanded[g.device.id] }">
       <div class="pw-ghead" @click="toggle(g.device.id)">
-        <span class="pwdot" :class="{ good: g.priced === g.total && !g.badParam, bad: g.priced < g.total }"></span>
+        <span class="pwdot" :class="{ good: g.total > 0 && g.priced === g.total && !g.badParam, bad: g.total > 0 && g.priced < g.total }"></span>
         <div class="pwinfo">
           <div class="pwname">{{ g.device.name }} <span v-if="g.device.spec" class="src">{{ g.device.spec }}</span></div>
           <div class="pwdim">{{ g.device.unit }} · {{ g.device.category }}</div>
         </div>
         <div class="pwtag">
-          <span v-if="g.priced === g.total && !g.badParam" class="gtag good">已配齐</span>
+          <span v-if="!g.total" class="gtag plain">未配置</span>
+          <span v-else-if="g.priced === g.total && !g.badParam" class="gtag good">已配齐</span>
           <span v-else-if="g.priced < g.total" class="gtag bad">{{ g.total - g.priced }} 缺价</span>
           <span v-if="g.badParam" class="gtag warn">{{ g.badParam }} 缺参数</span>
           <span class="gtag plain">{{ g.total }} 型号</span>
@@ -252,17 +237,18 @@ watch(() => props.dbSub, () => { expanded.value = {} }, { immediate: true })
         <div class="pw-cols">
           <span>品牌</span><span>型号</span><span>配置档次</span><span>参数（与型号对应）</span><span>单价(元)</span><span></span>
         </div>
-        <div v-for="(v, i) in g.variants" :key="v.key" class="pw-row" :class="{ empty: !v.brand.trim() }">
-          <input v-model.trim="v.brand" list="pw-brand-pool" :placeholder="unknownBrands.includes(v.brand) ? '停用品牌：' + v.brand : '品牌'" class="cell brand" @input="onBrandInput(g, v, $event.target.value)" @blur="saveBrandToPool(v.brand)">
+        <div v-if="!g.variants.length" class="pw-empty">该设备暂无品牌型号，点下方按钮添加第一条。</div>
+        <div v-for="(v, i) in g.variants" :key="v.id" class="pw-row" :class="{ empty: !v.brand }">
+          <input v-model.trim="v.brand" list="pw-brand-pool" :placeholder="unknownBrands.includes(v.brand) ? '停用品牌：' + v.brand : '品牌'" class="cell brand" @blur="saveBrandToPool(v.brand)">
           <input v-model.trim="v.model" placeholder="型号" class="cell">
           <select v-model="v.tier" class="cell tier"><option v-for="t in BUDGET_TIERS" :key="t.id" :value="t.name">{{ t.name }}</option></select>
-          <input v-model.trim="v.param" :placeholder="v.brand ? '与型号对应' : '参数'" class="cell" :class="{ warn: v.brand && !v.param.trim() }">
+          <input v-model.trim="v.param" :placeholder="v.brand ? '与型号对应' : '参数'" class="cell" :class="{ warn: v.brand && !v.param }">
           <input v-model.number="v.unitPrice" type="number" min="0" step="0.01" placeholder="单价" class="cell price">
           <div class="rop">
-            <button class="del" title="删除该型号" @click="removeRow(g, i)"><VIcon name="x" /></button>
+            <button class="del" title="删除该型号" @click="removeRow(g.device.id, i)"><VIcon name="x" /></button>
           </div>
         </div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="addVariant(g)"><VIcon name="plus" />在本设备下添加型号</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="addVariant(g.device.id)"><VIcon name="plus" />在本设备下添加型号</button>
       </div>
     </div>
 
@@ -310,6 +296,7 @@ watch(() => props.dbSub, () => { expanded.value = {} }, { immediate: true })
 .pw-row .cell{width:100%;font-size:13px}
 .pw-row.empty{opacity:.7}
 .pw-row.empty .cell{border-style:dashed}
+.pw-empty{padding:14px 16px;color:var(--text3);font-size:12.5px;background:var(--glass-1);border:1px dashed var(--line2);border-radius:8px;margin-bottom:8px}
 .cell.brand{background:var(--blue-bg);border-color:var(--blue-line);color:var(--text)}
 .cell.tier select{width:100%}
 .cell.price{font-family:var(--mono)}
