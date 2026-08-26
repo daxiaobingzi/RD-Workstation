@@ -54,7 +54,7 @@ const summary = computed(() => {
   const tax = gp.tax || 0
   const total = q.quote.total
   const finalAmt = Math.round(total * markup * (1 + tax / 100) * 100) / 100
-  return { quote: q, markup, tax, total, finalAmt }
+  return { quote: q.quote, markup, tax, total, finalAmt }
 })
 
 const maxQ = computed(() => {
