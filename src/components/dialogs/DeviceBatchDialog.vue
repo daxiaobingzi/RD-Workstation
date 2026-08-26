@@ -93,23 +93,45 @@ async function doAdd () {
   emit('close')
 }
 
-// ---------- ② 批量修改：统一字段 ----------
+// ---------- ② 批量修改：统一字段 + 数量来源规则 ----------
 const edit = reactive({ category: '', unit: '', toSub: '' })
+const rule = reactive({ enabled: false, mode: 'carry', capacity: 1, factor: 1, reserve: 0, round: 'ceil' })
 const selected = computed(() => {
   const set = new Set(props.selectedIds)
   return devices.value.filter(d => d.subsystem === props.subsystem && set.has(d.id))
 })
+const ruleTargets = computed(() => selected.value.filter(d => d.category !== '前端设备'))
 const subs = computed(() => settings.value.subsystems.map(s => s.name))
+
+// 生成与设备编辑弹窗一致的数量规则结构（chain + ratio）
+function chainFor (mode, capacity, factor, reserve, round) {
+  const cap = Math.max(1, parseInt(capacity) || 1)
+  if (mode === 'fixed') {
+    return {
+      chain: { mode: 'fixed', capacity: cap },
+      ratio: { type: 'fixed', per: cap, qty: cap, target: '*' }
+    }
+  }
+  return {
+    chain: { mode, capacity: cap, source: 'front', sources: [], factor: parseFloat(factor) || 1, reserve: parseInt(reserve) || 0, round: round || 'ceil' },
+    ratio: { type: 'ratio', per: cap, target: '*' }
+  }
+}
 
 async function doEdit () {
   const list = selected.value
   if (!list.length) { store.toast('未勾选任何设备'); return }
-  if (!edit.category && !edit.unit.trim() && !edit.toSub) { store.toast('请至少填写一项要修改的内容'); return }
+  if (!edit.category && !edit.unit.trim() && !edit.toSub && !rule.enabled) { store.toast('请至少填写一项要修改的内容'); return }
   busy.value = true
+  let ruleApplied = 0
   list.forEach(d => {
     const data = {}
     if (edit.category) data.category = edit.category
     if (edit.unit.trim()) data.unit = edit.unit.trim()
+    if (rule.enabled && d.category !== '前端设备') {
+      Object.assign(data, chainFor(rule.mode, rule.capacity, rule.factor, rule.reserve, rule.round))
+      ruleApplied++
+    }
     store.saveDevice(d, data)
     if (edit.toSub && edit.toSub !== d.subsystem) {
       d.subsystem = edit.toSub
@@ -119,7 +141,10 @@ async function doEdit () {
   })
   await store.saveAll()
   busy.value = false
-  store.toast(`已批量修改 ${list.length} 台设备`)
+  const note = rule.enabled
+    ? (ruleApplied < list.length ? `，其中 ${ruleApplied} 台已设数量规则（前端设备跳过）` : '，数量规则已统一设置')
+    : ''
+  store.toast(`已批量修改 ${list.length} 台设备${note}`)
   emit('close')
 }
 
@@ -172,6 +197,32 @@ function resetEdit () { edit.category = ''; edit.unit = ''; edit.toSub = '' }
           </select>
         </div>
       </div>
+
+      <!-- 数量来源规则（批量配置） -->
+      <div class="rule-batch">
+        <label class="rb-check">
+          <input type="checkbox" v-model="rule.enabled"> 统一设置数量来源规则
+          <span class="src">（仅对勾选设备中非「前端设备」生效，当前可应用 {{ ruleTargets.length }} 台）</span>
+        </label>
+        <div v-if="rule.enabled" class="form-grid" style="margin-top:10px">
+          <div class="fitem"><label>推算方式</label>
+            <select v-model="rule.mode">
+              <option value="carry">前端合计每 N 台 → 1 台本设备（承载）</option>
+              <option value="mul">前端合计 × N（倍数）</option>
+              <option value="fixed">固定数量</option>
+            </select>
+          </div>
+          <div class="fitem"><label>{{ rule.mode === 'fixed' ? '固定数量' : 'N（每 N 台 / 倍数）' }}</label><input v-model.number="rule.capacity" type="number" min="1" step="1"></div>
+          <div v-if="rule.mode !== 'fixed'" class="fitem"><label>冗余系数（不填=1）</label><input v-model.number="rule.factor" type="number" min="1" step="0.05"></div>
+          <div v-if="rule.mode === 'carry'" class="fitem"><label>预留备件（台）</label><input v-model.number="rule.reserve" type="number" min="0" step="1"></div>
+          <div v-if="rule.mode === 'carry'" class="fitem"><label>取整方式</label>
+            <select v-model="rule.round">
+              <option value="ceil">向上取整（推荐）</option>
+              <option value="floor">向下取整</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <div v-if="selected.length" class="card" style="margin-top:6px;max-height:200px;overflow:auto">
         <div class="card-title">将作用于以下设备</div>
         <ul style="padding:0;margin:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px">
@@ -185,3 +236,10 @@ function resetEdit () { edit.category = ''; edit.unit = ''; edit.toSub = '' }
     </div>
   </ModalBase>
 </template>
+
+<style scoped>
+.rule-batch { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--glass-1); }
+.rb-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin: 0; }
+.rb-check input[type="checkbox"] { margin: 0; }
+.rb-check .src { color: var(--text3); font-size: 12px; font-weight: 400; }
+</style>

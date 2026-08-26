@@ -80,6 +80,13 @@ async function importCsv () {
   store.toast(`导入完成：新增 ${res.add} 条，更新 ${res.upd} 条${res.skip ? `，跳过 ${res.skip} 条` : ''}`)
   csvText.value = ''
 }
+// CSV 模板：预填该子系统全部前端设备，Excel 编辑后整段复制回来粘贴导入
+async function downloadTemplate () {
+  const rows = [['设备类型', '数量', '备注']]
+  devices.value.filter(d => d.subsystem === props.sub && d.status !== '归档' && d.category === '前端设备').forEach(d => rows.push([d.name, 1, '']))
+  await downloadBlob(`点表模板-${props.sub.replace(/[\\/:*?"<>|]/g, '_')}.csv`, buildCsvBlob(rowsToCSV(rows)))
+  store.toast(`模板已下载（含 ${rows.length - 1} 台设备），编辑后整段复制回「粘贴导入」`)
+}
 </script>
 
 <template>
@@ -157,6 +164,7 @@ async function importCsv () {
     <div v-else>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="btn btn-ghost" @click="exportCsv"><VIcon name="dl" />导出当前点表 CSV</button>
+        <button class="btn btn-ghost" @click="downloadTemplate"><VIcon name="dl" />下载 CSV 模板</button>
       </div>
       <label>粘贴导入（格式：设备类型,数量,备注，设备类型须在字典中）</label>
       <textarea v-model="csvText" rows="8" style="width:100%;font-family:var(--mono);font-size:13px" placeholder="网络摄像机(枪式),30,1F大堂&#10;网络摄像机(半球),20,各层走廊"></textarea>
