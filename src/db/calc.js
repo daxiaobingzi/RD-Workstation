@@ -108,8 +108,9 @@ export function getProjectSelection (meta, p, deviceId) {
 }
 
 // ===== 推导链引擎（承载能力可自定义） =====
-// 每个后端/承载类设备声明"承接谁 + 每台承载多少 + 冗余/取整"，由引擎按依赖顺序
+// 每个后端/承载类设备声明"承接什么 + 每台承载多少 + 冗余/取整"，由引擎按依赖顺序
 // 从"前端点位合计"开始逐环推导，形成整条链条：前端 → 传输 → 存储 → 固定件。
+// 承接来源支持三种：front（全部前端合计）| source（单个设备）| sources（多设备组合求和）
 // 兼容旧 ratio 字段：ratio {type:'ratio',per,target} ≈ chain {mode:'carry',capacity:per,source}
 //                ratio {type:'fixed',qty}     ≈ chain {mode:'fixed',caps:qty}
 
@@ -133,9 +134,18 @@ export function ensureDeviceChain (d) {
     c.factor = c.factor == null || c.factor === '' ? 1 : Number(c.factor) || 1
     c.reserve = Number(c.reserve) || 0
     c.round = c.round || 'ceil'
-    c.source = c.source || 'front'
+    if (c.source && c.source !== 'front' && !c.sources) c.sources = [c.source]
+    if (c.sources && !c.sources.length) delete c.sources
+    c.source = c.source || (c.sources && c.sources.length ? 'multi' : 'front')
   }
   return c
+}
+
+/** 承接来源的设备 id 数组（含 front 语义时返回空数组） */
+export function chainSourceIds (c) {
+  if (!c) return []
+  if (c.source === 'front' || c.source === 'multi' || !c.source) return (c.sources || []).filter(Boolean)
+  return [c.source]
 }
 
 /** 链上公式文本（供系统卡片展示推导依据） */
@@ -155,14 +165,24 @@ export function chainFormulaText (d, base, qty) {
   return s + ' = ' + qty
 }
 
-/** 链上承载关系展示（如 "承接 前端合计"） */
+/** 链接收关系展示（如 "承接 前端合计" / "承接 枪机+半球"） */
 export function chainSourceLabel (devices, d) {
   const c = ensureDeviceChain(d)
-  if (!c || c.mode === 'fixed') return ''
-  if (c.mode === 'mul') return '每台 × 承接'
-  if (c.source === 'front') return '承接 前端合计'
-  const src = devices.find(x => x.id === c.source)
-  return src ? '承接 ' + src.name : '承接 ?'
+  if (!c || c.mode === 'fixed' || c.mode === 'mul') return c && c.mode === 'mul' ? '按倍数' : ''
+  const ids = chainSourceIds(c)
+  if (!ids.length) return '承接 前端合计'
+  const names = ids.map(id => (devices.find(x => x.id === id) || {}).name || '?')
+  return '承接 ' + names.join('+')
+}
+
+/** 承接来源的值：qtyById（已解析设备量）与 frontTotal 缺一的提供者 */
+function sourceBaseValue (c, qtyById, frontTotal, devs) {
+  const ids = chainSourceIds(c)
+  if (!ids.length) return { base: frontTotal, lbl: '承接 前端合计' }
+  let base = 0
+  ids.forEach(id => { const d = devs.find(x => x.id === id); base += qtyById[id] != null ? qtyById[id] : (d && d.category === '前端设备' ? (qtyById[id] || 0) : 0) })
+  const names = ids.map(id => (devs.find(x => x.id === id) || {}).name || '?')
+  return { base, lbl: '承接 ' + names.join('+') }
 }
 
 /**
@@ -182,6 +202,8 @@ export function deriveChain (devices, points, p, sub) {
   })
   const frontTotal = Object.values(frontQty).reduce((a, b) => a + b, 0)
   const qtyById = {}
+  // 预填前端数量（供后端依赖解析使用）
+  devs.filter(d => d.category === '前端设备').forEach(d => { qtyById[d.id] = frontQty[d.id] || 0 })
   const order = []
   const visited = {}
   const pend = new Set(devs.filter(d => d.category !== '前端设备').map(d => d.id))
@@ -194,14 +216,9 @@ export function deriveChain (devices, points, p, sub) {
       const d = devs.find(x => x.id === id)
       if (!d) { pend.delete(id); return }
       const c = ensureDeviceChain(d)
-      const needId = c && c.source && c.source !== 'front' ? c.source : null
-      if (needId) {
-        if (visited[needId]) {
-          if (!visited[id]) { order.push(id); visited[id] = true }
-          pend.delete(id); progressed = true
-        }
-        return
-      }
+      const needs = chainSourceIds(c)
+      const unready = needs.filter(nid => nid !== 'front' && qtyById[nid] === undefined)
+      if (unready.length) return // 依赖未就绪
       if (!visited[id]) { order.push(id); visited[id] = true }
       pend.delete(id); progressed = true
     })
@@ -227,16 +244,7 @@ export function deriveChain (devices, points, p, sub) {
       rows.push({ device: d, qty: q, base: q, formula: '固定 ' + q, sourceLabel: '' })
       return
     }
-    let base = 0
-    let lbl = ''
-    if (c.source === 'front' || !c.source) {
-      base = frontTotal
-      lbl = '承接 前端合计'
-    } else {
-      base = qtyById[c.source] || 0
-      const src = devs.find(x => x.id === c.source)
-      lbl = src ? '承接 ' + src.name : '承接 ?'
-    }
+    const { base, lbl } = sourceBaseValue(c, qtyById, frontTotal, devs)
     let q = 0
     if (c.mode === 'mul') {
       q = Math.round(base * c.capacity * (c.factor || 1))
