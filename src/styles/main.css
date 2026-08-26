@@ -307,6 +307,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
 .node-fml{font-family:var(--mono);font-size:12px;color:var(--text2);background:var(--chip-bg);border:1px dashed var(--line2);border-radius:8px;padding:5px 10px;white-space:nowrap}
 .node-price{font-size:13px;color:var(--text);font-family:var(--mono);white-space:nowrap;font-variant-numeric:tabular-nums}
 .node-price .mprice{color:var(--red);font-family:var(--mono);font-size:12px}
+.node-unconf{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--amber-ink);background:var(--amber-l);border:1px dashed var(--amber-line);border-radius:8px;padding:5px 10px}
+.node-unconf svg{width:13px;height:13px}
 .node-op{display:flex;gap:4px;align-items:center}
 .node-op .btn-icon{width:30px;height:30px;min-height:30px}
 .node-op .btn-icon.del:hover{background:var(--red-l);color:var(--red)}

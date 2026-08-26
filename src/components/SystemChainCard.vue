@@ -58,7 +58,7 @@ function frontQtyFor (id) {
   return draftQty.value[id] !== undefined ? Number(draftQty.value[id]) || 0 : (frontReal.value[id] || 0)
 }
 
-// ---- 承载链：手写推导（复用 calc 引擎的公式，但允许草稿模拟点位）----
+// ---- 承载链：手写推导（支持任意承接来源 + 草稿模拟点位），顺序按依赖拓扑 ---- 
 const chainRows = computed(() => {
   const frontTotal = frontTotalDraft()
   const qtyById = {}
@@ -66,15 +66,37 @@ const chainRows = computed(() => {
   frontDevs.value.forEach(d => {
     const q = frontQtyFor(d.id)
     qtyById[d.id] = q
-    rows.push({ device: d, qty: q, base: '#', label: d.category === '前端设备' ? '点位' : '', price: priceOf(d) })
+    rows.push({ device: d, qty: q, base: '#', label: '点位', price: priceOf(d) })
   })
-  backDevs.value.forEach(d => {
+
+  // 按依赖顺序解析后端链（硬盘承接 NVR → NVR 先算；循环兜底按原序）
+  const backOrder = []
+  const done = {}
+  const pend = backDevs.value.slice()
+  let guard = 0
+  while (pend.length && guard++ < 60) {
+    let progressed = false
+    for (let i = pend.length - 1; i >= 0; i--) {
+      const dv = pend[i]
+      const c = ensureDeviceChain(dv)
+      const need = c && c.source && c.source !== 'front' ? c.source : null
+      if (need && !qtyById[need] && !pend.some(x => x.id === need)) { pend.splice(i, 1); done[dv.id] = true; continue }
+      if (need && !qtyById[need] && !done[need]) continue // 依赖未就绪
+      pend.splice(i, 1)
+      backOrder.push(dv)
+      done[dv.id] = true
+      progressed = true
+    }
+    if (!progressed) { backOrder.push(...pend); pend.length = 0 }
+  }
+
+  backOrder.forEach(d => {
     const c = ensureDeviceChain(d) || null
-    if (!c) { rows.push({ device: d, qty: null, base: 0, label: '未配置', formula: '', srcName: '未配置', price: priceOf(d) }); return }
+    if (!c) { rows.push({ device: d, qty: null, base: 0, label: '数量手填', formula: '', srcName: '', price: priceOf(d) }); return }
     if (c.mode === 'fixed') {
       const q = c.capacity
       qtyById[d.id] = q
-      rows.push({ device: d, qty: q, base: q, label: '固定', formula: '固定 ' + q, srcName: '固定值', price: priceOf(d) })
+      rows.push({ device: d, qty: q, base: q, label: '固定值', formula: '固定 ' + q, srcName: '固定值', price: priceOf(d) })
       return
     }
     let base = 0
@@ -210,25 +232,32 @@ defineExpose({ applyAll, clearDraft })
             </div>
           </div>
         </template>
-        <!-- 后端：公式 + 就地改承载 -->
+        <!-- 后端：公式 + 规则编辑（规则存于设备字典，全局生效） -->
         <template v-else>
           <div class="chain-node" :class="[r.qty == null ? 'off' : 'back']">
             <div class="node-body">
               <span class="node-idx">环{{ i + 1 }}</span>
               <div class="node-info">
                 <div class="node-name">{{ r.device.name }}<span v-if="r.device.spec" class="src"> {{ r.device.spec }}</span></div>
-                <div class="node-src">{{ r.label }}</div>
+                <div class="node-src">{{ r.label || '数量手填' }}</div>
               </div>
-              <div class="node-fml">{{ r.formula }}</div>
-              <div class="node-price">
-                <span>{{ r.qty }} {{ r.device.unit || '台' }}</span>
-                <template v-if="r.price != null"> · ¥ {{ r.price.toLocaleString('zh-CN') }}</template>
-                <b v-else class="mprice"> · 缺价</b>
-              </div>
+              <template v-if="r.qty != null">
+                <div class="node-fml">{{ r.formula }}</div>
+                <div class="node-price">
+                  <span>{{ r.qty }} {{ r.device.unit || '台' }}</span>
+                  <template v-if="r.price != null"> · ¥ {{ r.price.toLocaleString('zh-CN') }}</template>
+                  <b v-else class="mprice"> · 缺价</b>
+                </div>
+              </template>
+              <template v-else>
+                <div class="node-unconf"><VIcon name="zap" :size="13" /> 未配置规则（手填）</div>
+              </template>
             </div>
             <div class="node-op">
-              <button class="btn btn-icon btn-sm" title="编辑承载规则" @click="editCapacity(r.device)"><VIcon name="edit" /></button>
-              <button class="btn btn-icon btn-sm del" title="移出链路" @click="removeFromChain(r.device)"><VIcon name="x" /></button>
+              <button class="btn btn-ghost btn-sm" :title="r.qty == null ? '配置数量来源规则（存于设备字典，全局生效）' : '编辑数量来源规则'" @click="editCapacity(r.device)">
+                <VIcon :name="r.qty == null ? 'zap' : 'edit'" />{{ r.qty == null ? '配置规则' : '' }}
+              </button>
+              <button class="btn btn-icon btn-sm del" title="关闭自动推算（改为手填）" @click="removeFromChain(r.device)"><VIcon name="x" /></button>
             </div>
           </div>
         </template>
