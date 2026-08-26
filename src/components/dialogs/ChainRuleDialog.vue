@@ -1,5 +1,5 @@
 <script setup>
-// 链接收规则：后端设备数量由"前端合计"或"指定设备（含其他后端）"推导
+// 链接收规则：后端设备数量由"前端合计"或"指定设备（可多选，含其他后端）"推导
 // 规则保存在设备字典中，全局共享：所有项目引用同一台设备时自动继承本规则
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -7,7 +7,7 @@ import { useAppStore } from '../../store'
 import { BUDGET_TIERS } from '../../db/constants'
 import ModalBase from '../ui/ModalBase.vue'
 import VIcon from '../ui/VIcon.vue'
-import { ensureDeviceChain } from '../../db/calc'
+import { ensureDeviceChain, chainSourceIds } from '../../db/calc'
 
 const props = defineProps({
   device: { type: Object, default: null }
@@ -18,11 +18,14 @@ const store = useAppStore()
 const { devices } = storeToRefs(store)
 
 const src = ensureDeviceChain(props.device) || null
+// 承接来源：'front'=全部前端合计；'multi'=自定义多选（sources 数组）
+const srcIds = chainSourceIds(src)
 const f = reactive({
   enabled: !!src,
   mode: src?.mode || 'carry', // carry | mul | fixed
   capacity: src?.capacity || 1,
-  source: src?.source || 'front',
+  srcKind: srcIds && srcIds.length ? 'multi' : 'front',
+  sources: srcIds.slice(),
   factor: src?.factor != null ? src.factor : 1,
   reserve: src?.reserve || 0,
   round: src?.round || 'ceil'
@@ -33,21 +36,32 @@ const sameSubDevs = computed(() => devices.value.filter(d => d.subsystem === pro
 const frontDevs = computed(() => sameSubDevs.value.filter(d => d.category === '前端设备'))
 const backDevs = computed(() => sameSubDevs.value.filter(d => d.category === '后端设备'))
 
+function toggleSrc (id) {
+  const i = f.sources.indexOf(id)
+  if (i >= 0) f.sources.splice(i, 1)
+  else f.sources.push(id)
+  // 多选为空则退回前端合计
+  if (!f.sources.length) f.srcKind = 'front'
+  else f.srcKind = 'multi'
+}
+function setFrontAll () { f.srcKind = 'front'; f.sources = [] }
+
 const srcName = computed(() => {
-  if (f.source === 'front') return '前端设备合计'
-  const d = devices.value.find(x => x.id === f.source)
-  return d ? d.name : '?'
+  if (f.srcKind === 'front' || !f.sources.length) return '前端设备合计'
+  const names = f.sources.map(id => { const d = devices.value.find(x => x.id === id); return d ? d.name : '?' })
+  return names.join('+')
 })
 // 预览：按当前参数即时估算数量公式
 const preview = computed(() => {
   if (!f.enabled) return ''
   if (f.mode === 'fixed') return '数量 = 固定 ' + f.capacity
+  const base = srcName.value
   if (f.mode === 'mul') {
-    let s = srcName.value + ' × ' + f.capacity
+    let s = base + ' × ' + f.capacity
     if (f.factor !== 1) s += ' ×' + f.factor
     return '数量 = ' + s
   }
-  let s = (f.round === 'floor' ? '↓' : '↑') + '(' + srcName.value + ' ÷ ' + f.capacity
+  let s = (f.round === 'floor' ? '↓' : '↑') + '(' + base + ' ÷ ' + f.capacity
   if (f.factor !== 1) s += ' × ' + f.factor
   s += ')'
   if (f.reserve) s += ' + ' + f.reserve
@@ -64,17 +78,18 @@ async function save () {
       chainObj = {
         mode: f.mode === 'mul' ? 'mul' : 'carry',
         capacity: Math.max(1, parseInt(f.capacity) || 1),
-        source: f.source || 'front',
+        source: f.srcKind === 'multi' && f.sources.length ? 'multi' : 'front',
+        sources: f.srcKind === 'multi' ? f.sources.slice() : [],
         factor: parseFloat(f.factor) || 1,
         reserve: parseInt(f.reserve) || 0,
         round: f.round || 'ceil'
       }
     }
   }
-  store.saveDevice(d, { chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? (devices.value.find(x => x.id === chainObj.source)?.name || '*') : '*' } : null })
+  store.saveDevice(d, { chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? '*' : '*' } : null })
   await store.saveAll()
   emit('close')
-  store.toast(`「${d.name}」链规则已保存，本规则存于设备字典，所有项目自动生效`)
+  store.toast(`「${d.name}」链规则已保存，存于设备字典，所有项目自动生效`)
 }
 </script>
 
@@ -89,19 +104,32 @@ async function save () {
 
     <template v-if="f.enabled">
       <div class="form-grid">
-        <div class="fitem">
-          <label>数量随 … 变化</label>
-          <select v-model="f.source" style="width:100%">
-            <option value="front">前端设备合计（本系统全部前端）</option>
-            <optgroup label="—— 指定前端设备 ——">
-              <option v-for="d in frontDevs" :key="d.id" :value="d.id">{{ d.name }}{{ d.spec ? '（' + d.spec + '）' : '' }}</option>
-            </optgroup>
-            <optgroup label="—— 指定后端设备（链式承接）——">
-              <option v-for="d in backDevs" :key="d.id" :value="d.id">{{ d.name }}{{ d.spec ? '（' + d.spec + '）' : '' }}</option>
-            </optgroup>
-            <option v-if="!sameSubDevs.length" disabled>（本系统暂无其他设备）</option>
-          </select>
-          <div class="hint">示例：硬盘数量随 NVR（后端设备）变化 → 选「指定后端设备：NVR」</div>
+        <div class="fitem" style="grid-column:1/-1">
+          <label>数量随 … 变化（可多选设备组合）</label>
+          <div class="src-row">
+            <button type="button" class="src-pill" :class="{ on: f.srcKind === 'front' || !f.sources.length }" @click="setFrontAll">前端设备合计</button>
+            <button type="button" class="src-pill multi" :class="{ on: f.srcKind === 'multi' && f.sources.length }" @click="f.srcKind = 'multi'">自定义勾选</button>
+          </div>
+          <div v-if="f.srcKind === 'multi'" class="src-pick">
+            <div class="src-group">
+              <div class="src-group-t">前端设备</div>
+              <label v-for="d in frontDevs" :key="d.id" class="src-check" :class="{ on: f.sources.indexOf(d.id) >= 0 }">
+                <input type="checkbox" :checked="f.sources.indexOf(d.id) >= 0" @change="toggleSrc(d.id)">
+                {{ d.name }}<span v-if="d.spec" class="src-dim">（{{ d.spec }}）</span>
+              </label>
+              <div v-if="!frontDevs.length" class="src-none">无</div>
+            </div>
+            <div class="src-group">
+              <div class="src-group-t">后端设备（链式承接）</div>
+              <label v-for="d in backDevs" :key="d.id" class="src-check" :class="{ on: f.sources.indexOf(d.id) >= 0 }">
+                <input type="checkbox" :checked="f.sources.indexOf(d.id) >= 0" @change="toggleSrc(d.id)">
+                {{ d.name }}<span v-if="d.spec" class="src-dim">（{{ d.spec }}）</span>
+              </label>
+              <div v-if="!backDevs.length" class="src-none">无</div>
+            </div>
+            <div v-if="!sameSubDevs.length" class="src-none">本系统暂无其他设备</div>
+          </div>
+          <div class="hint">勾选多台设备 = 按所选设备的数量<b>求和</b>计算本设备数量；不勾选任何 = 全部前端合计。</div>
         </div>
         <div class="fitem">
           <label>推算方式</label>
@@ -151,4 +179,15 @@ async function save () {
 .rule-tip{font-size:12.5px;color:var(--green-ink);background:var(--green-l);border:1px solid var(--green-line);border-radius:10px;padding:8px 12px;line-height:1.6}
 .rule-tip b{color:inherit}
 .preview{font-family:var(--mono);font-size:13px;color:var(--text2);background:var(--glass-1);padding:8px 12px;border-radius:8px;border:1px dashed var(--line2);margin-top:10px}
+.src-row{display:flex;gap:8px;margin-bottom:8px}
+.src-pill{padding:6px 14px;border-radius:999px;border:1px solid var(--line2);font-size:12.5px;cursor:pointer;color:var(--text2);background:var(--glass-1)}
+.src-pill.on{border-color:var(--accent);color:var(--on-primary);background:var(--accent)}
+.src-pick{display:grid;grid-template-columns:1fr 1fr;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--glass-1)}
+.src-group{display:flex;flex-direction:column;gap:4px}
+.src-group-t{font-size:11.5px;color:var(--text3);font-weight:600;margin-bottom:2px}
+.src-check{display:flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 6px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src-check input{width:auto;margin:0}
+.src-check.on{background:var(--primary-l)}
+.src-dim{color:var(--text3);font-size:11px}
+.src-none{font-size:12px;color:var(--text3);padding:4px 0}
 </style>

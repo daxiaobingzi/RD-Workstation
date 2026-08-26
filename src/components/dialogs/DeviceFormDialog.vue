@@ -30,25 +30,33 @@ const quotaRows = ref(JSON.parse(JSON.stringify(props.device?.quota || [])))
 
 // 链式承载配置（承载能力可自定义：承接谁 + 每台承载多少 + 系数/预留/取整）
 const srcChain = props.device?.chain || props.device?.ratio || null
-const chain = reactive({
-  // 新建设备：类别选“后端设备”时默认展开规则区，引导一次性配置
-  enabled: !!props.device?.chain || !!props.device?.ratio || (isNew.value && f.category === '后端设备'),
-  mode: srcChain?.mode || srcChain?.type || 'carry', // carry | mul | fixed
-  capacity: srcChain ? (Number(srcChain.capacity) || (srcChain.type === 'ratio' ? Number(srcChain.per) || 1 : srcChain.type === 'fixed' ? Number(srcChain.qty) || 1 : 1)) : 1,
-  source: srcChain?.source || (srcChain?.targetDeviceId) || (srcChain?.target && srcChain.target !== '*' ? srcChain.target : 'front') || 'front',
-  factor: srcChain?.factor != null ? Number(srcChain.factor) : 1,
-  reserve: srcChain?.reserve != null ? Number(srcChain.reserve) : 0,
-  round: srcChain?.round || 'ceil'
-})
 
 // 本系统可作为承接来源的设备（前端 + 后端，链式）
 const sameSubDevs = computed(() => devices.value.filter(d => d.subsystem === sub && d.id !== props.device?.id && d.status !== '归档'))
 const frontDevs = computed(() => sameSubDevs.value.filter(d => d.category === '前端设备'))
 const backDevs = computed(() => sameSubDevs.value.filter(d => d.category === '后端设备'))
+
+const chain = reactive({
+  // 新建设备：类别选“后端设备”时默认展开规则区，引导一次性配置
+  enabled: !!props.device?.chain || !!props.device?.ratio || (isNew.value && f.category === '后端设备'),
+  mode: srcChain?.mode || srcChain?.type || 'carry', // carry | mul | fixed
+  capacity: srcChain ? (Number(srcChain.capacity) || (srcChain.type === 'ratio' ? Number(srcChain.per) || 1 : srcChain.type === 'fixed' ? Number(srcChain.qty) || 1 : 1)) : 1,
+  srcKind: (srcChain?.sources && srcChain.sources.length) || (srcChain?.source && srcChain.source !== 'front') ? 'multi' : 'front',
+  sources: (srcChain?.sources || (srcChain?.source && srcChain.source !== 'front' ? [srcChain.source] : [])).slice(),
+  factor: srcChain?.factor != null ? Number(srcChain.factor) : 1,
+  reserve: srcChain?.reserve != null ? Number(srcChain.reserve) : 0,
+  round: srcChain?.round || 'ceil'
+})
+function toggleSrc (id) {
+  const i = chain.sources.indexOf(id)
+  if (i >= 0) chain.sources.splice(i, 1)
+  else chain.sources.push(id)
+  chain.srcKind = chain.sources.length ? 'multi' : 'front'
+}
+function setFrontAll () { chain.srcKind = 'front'; chain.sources = [] }
 const chainSrcName = computed(() => {
-  if (chain.source === 'front') return '前端设备合计'
-  const d = devices.value.find(x => x.id === chain.source)
-  return d ? d.name : '?'
+  if (chain.srcKind === 'front' || !chain.sources.length) return '前端设备合计'
+  return chain.sources.map(id => { const d = devices.value.find(x => x.id === id); return d ? d.name : '?' }).join('+')
 })
 const brands = ref(JSON.parse(JSON.stringify(store.devBrands[props.device?.id] || [])))
 
@@ -71,7 +79,8 @@ async function save () {
       chainObj = {
         mode: chain.mode === 'mul' ? 'mul' : 'carry',
         capacity: Math.max(1, parseInt(chain.capacity) || 1),
-        source: chain.source || 'front',
+        source: chain.srcKind === 'multi' && chain.sources.length ? 'multi' : 'front',
+        sources: chain.srcKind === 'multi' ? chain.sources.slice() : [],
         factor: parseFloat(chain.factor) || 1,
         reserve: parseInt(chain.reserve) || 0,
         round: chain.round || 'ceil'
@@ -79,14 +88,15 @@ async function save () {
     }
   }
 
+  const ratioTarget = '*'
   let d = props.device
   if (isNew.value) {
-    d = store.addDevice({ subsystem: sub, name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? (devices.value.find(x => x.id === chainObj.source)?.name || '*') : '*' } : null })
+    d = store.addDevice({ subsystem: sub, name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: ratioTarget } : null })
     // 新设备排到该子系统末尾
     const tail = devices.value.filter(x => x.subsystem === sub).length
     store.devSort[d.id] = tail
   } else {
-    store.saveDevice(d, { name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? (devices.value.find(x => x.id === chainObj.source)?.name || '*') : '*' } : null })
+    store.saveDevice(d, { name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: ratioTarget } : null })
   }
 
   // 品牌价格
@@ -170,23 +180,31 @@ async function save () {
             数量来源规则 <span style="color:var(--text3);font-weight:400">存于设备字典，项目中自动套用（无需每个项目重配）</span>
           </span>
         </label>
-        <div v-if="isNew && f.category === '后端设备' && !srcChain" class="rule-tip">「后端设备」支持自动推算数量：建议在此一并配置规则（如每 32 台前端配 1 台 NVR、每 1 台 NVR 配 2 块硬盘），否则项目中需手填数量。</div>
+        <div v-if="isNew && f.category === '后端设备' && !srcChain" class="rule-tip">「后端设备」可配置数量来源规则实现自动推算；规则存于设备字典，项目中自动套用。</div>
       </div>
 
       <template v-if="chain.enabled && f.category !== '前端设备'">
-        <div class="fitem">
-          <label>数量随 … 变化（承接来源）</label>
-          <select v-model="chain.source" style="width:100%">
-            <option value="front">前端设备合计（本系统全部前端）</option>
-            <optgroup label="—— 指定前端设备 ——">
-              <option v-for="d in frontDevs" :key="d.id" :value="d.id">{{ d.name }}{{ d.spec ? '（' + d.spec + '）' : '' }}</option>
-            </optgroup>
-            <optgroup label="—— 指定后端设备（链式承接）——">
-              <option v-for="d in backDevs" :key="d.id" :value="d.id">{{ d.name }}{{ d.spec ? '（' + d.spec + '）' : '' }}</option>
-            </optgroup>
-            <option v-if="!sameSubDevs.length" disabled>（本系统暂无其他设备）</option>
-          </select>
-          <div class="hint">示例：硬盘数量随 NVR（后端）变化 → 选「指定后端设备：NVR」</div>
+        <div class="fitem" style="grid-column:1/-1">
+          <label>数量随 … 变化（可多选设备组合求和）</label>
+          <div class="src-row">
+            <button type="button" class="pick-pill" :class="{ on: chain.srcKind === 'front' || !chain.sources.length }" @click="setFrontAll">前端设备合计</button>
+            <button type="button" class="pick-pill" :class="{ on: chain.srcKind === 'multi' && chain.sources.length }" @click="chain.srcKind = 'multi'">自定义勾选</button>
+          </div>
+          <div v-if="chain.srcKind === 'multi'" class="pick-box">
+            <div class="pick-group">
+              <div class="pick-group-t">前端设备</div>
+              <label v-for="d in frontDevs" :key="d.id" class="pick-check" :class="{ on: chain.sources.indexOf(d.id) >= 0 }">
+                <input type="checkbox" :checked="chain.sources.indexOf(d.id) >= 0" @change="toggleSrc(d.id)">{{ d.name }}
+              </label>
+            </div>
+            <div class="pick-group">
+              <div class="pick-group-t">后端设备（链式承接）</div>
+              <label v-for="d in backDevs" :key="d.id" class="pick-check" :class="{ on: chain.sources.indexOf(d.id) >= 0 }">
+                <input type="checkbox" :checked="chain.sources.indexOf(d.id) >= 0" @change="toggleSrc(d.id)">{{ d.name }}
+              </label>
+            </div>
+          </div>
+          <div class="hint">勾选多台 = 按所选数量求和推算本设备；不勾选 = 全部前端合计。</div>
         </div>
         <div class="fitem">
           <label>推算方式</label>
@@ -235,4 +253,13 @@ async function save () {
 <style scoped>
 .rule-tip{font-size:12.5px;color:var(--green-ink);background:var(--green-l);border:1px solid var(--green-line);border-radius:10px;padding:8px 12px;line-height:1.6;margin-top:6px}
 .rule-prev{font-family:var(--mono);font-size:13px;color:var(--text2);background:var(--glass-1);padding:8px 12px;border-radius:8px;border:1px dashed var(--line2)}
+.src-row{display:flex;gap:8px;margin-bottom:8px}
+.pick-pill{padding:6px 14px;border-radius:999px;border:1px solid var(--line2);font-size:12.5px;cursor:pointer;color:var(--text2);background:var(--glass-1);display:inline-flex;align-items:center;gap:6px}
+.pick-pill.on{border-color:var(--accent);color:var(--on-primary);background:var(--accent)}
+.pick-box{display:grid;grid-template-columns:1fr 1fr;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--glass-1)}
+.pick-group{display:flex;flex-direction:column;gap:4px}
+.pick-group-t{font-size:11.5px;color:var(--text3);font-weight:600;margin-bottom:2px}
+.pick-check{display:flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 6px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pick-check input{width:auto;margin:0}
+.pick-check.on{background:var(--primary-l)}
 </style>
