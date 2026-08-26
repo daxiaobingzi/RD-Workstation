@@ -89,13 +89,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="app">
-    <!-- PC 侧边栏 -->
+    <!-- PC 侧边栏：图纸目录 + 图签栏 -->
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-logo"><VIcon name="zap" :size="20" /></div>
         <div>
-          <div class="brand-name">弱电智能化设计工作台</div>
-          <div class="brand-sub">项目 · 设备点表 · 清单</div>
+          <div class="brand-name">弱电智能化设计台</div>
+          <div class="brand-sub">ELV · 设计工作台</div>
         </div>
       </div>
       <nav class="nav">
@@ -118,7 +118,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <span class="dot" :class="{ off: !online }"></span>
           <span>{{ syncText }}</span>
         </div>
-        <div>本地存储 · 预留云端接口</div>
+        <div class="t-dim">图签栏 · 本地存储 · 预留云端</div>
       </div>
     </aside>
 

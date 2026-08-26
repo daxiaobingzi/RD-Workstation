@@ -128,7 +128,7 @@ const hasFrontQty = computed(() => rows.value.some(r => r.frontQty > 0))
 .sel-opts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .opt{flex:1;min-width:150px;max-width:210px;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--card2);transition:all .15s}
 .opt:hover{border-color:var(--orange);transform:translateY(-1px)}
-.opt.on{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary), 0 4px 14px rgba(106,95,193,.25)}
+.opt.on{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary), 0 4px 14px rgba(232,135,30,.22)}
 .opt.on .o-brand,.opt.on .o-price{color:var(--primary)}
 .o-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .o-brand{font-weight:700;font-size:13px}

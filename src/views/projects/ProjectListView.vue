@@ -51,9 +51,9 @@ function progressOf (p) {
   return store.calcProgress({ points: points.value, bills: bills.value, notes: notesRef.value }, { ...p })
 }
 function progColor (p) {
-  if (p.状态 === '已完成' || p.状态 === '已归档') return '#34d399'
-  if (p.清单状态 === '已生成' || p.状态 === '校核中') return '#6a5fc1'
-  return '#F7A501'
+  if (p.状态 === '已完成' || p.状态 === '已归档') return 'var(--green)'
+  if (p.清单状态 === '已生成' || p.状态 === '校核中') return 'var(--primary)'
+  return 'var(--amber)'
 }
 function badgeCls (s) {
   return { '设计中': 'blue', '校核中': 'amber', '已出清单': 'green', '已完成': 'gray' }[s] || 'plain'
@@ -117,13 +117,13 @@ watch(() => store.curTab, () => { if (store.curTab !== 'projects') layout.setAct
     <!-- 统计卡片 -->
     <div v-if="projects.length" class="stat-cards">
       <div v-for="(s, i) in [
-        ['项目总数', stats.total, '#6a5fc1', 'folder'],
-        ['设计中', stats.d, '#F7A501', 'clock'],
-        ['校核中', stats.c, '#38bdf8', 'check'],
-        ['已出清单', stats.b, '#34d399', 'check'],
-        ['已完成', stats.f, '#5b6b7d', 'check'],
-        ['已归档', stats.a, '#7c74a0', 'folder'],
-        ['超期项目', stats.od, '#d9381f', 'alert']
+        ['项目总数', stats.total, 'var(--primary)', 'folder'],
+        ['设计中', stats.d, 'var(--amber)', 'clock'],
+        ['校核中', stats.c, 'var(--accent)', 'check'],
+        ['已出清单', stats.b, 'var(--green)', 'check'],
+        ['已完成', stats.f, 'var(--gray)', 'check'],
+        ['已归档', stats.a, 'var(--text3)', 'folder'],
+        ['超期项目', stats.od, 'var(--red)', 'alert']
       ]" :key="s[0]" class="stat-card" :style="{ color: s[2] }">
         <div class="bar"></div>
         <div class="ic" :style="{ background: s[2] }"><VIcon :name="s[3]" /></div>

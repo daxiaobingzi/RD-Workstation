@@ -61,7 +61,7 @@ const groupsBySub = computed(() => {
   return arr
 })
 const CATS = ['前端设备', '后端设备', '管材线缆', '辅材']
-const catColor = c => ({ '前端设备': '#6a5fc1', '后端设备': '#38bdf8', '管材线缆': '#34d399', '辅材': '#F7A501' }[c] || '#9aa0a6')
+const catColor = c => ({ '前端设备': 'var(--accent)', '后端设备': 'var(--primary)', '管材线缆': 'var(--green)', '辅材': 'var(--amber)' }[c] || 'var(--gray)')
 
 const fmtD = at => at ? String(at).replace('T', ' ').slice(0, 19) : '-'
 

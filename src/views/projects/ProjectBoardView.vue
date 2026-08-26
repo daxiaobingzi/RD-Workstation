@@ -53,12 +53,12 @@ onBeforeUnmount(() => layout.setActions([]))
       <div class="card">
         <div class="card-title">项目状态分布 <span class="sub">共 {{ projects.length }} 个项目 · 超期按预计结束日期判定</span></div>
         <div v-for="b in [
-          bar('设计中', dist.d, '#F7A501'),
-          bar('校核中', dist.c, '#38bdf8'),
-          bar('已出清单', dist.b, '#6a5fc1'),
-          bar('已完成', dist.f, '#34d399'),
-          bar('已归档', dist.a, '#7c74a0'),
-          bar('超期（预计结束已过）', dist.od, '#d9381f')
+          bar('设计中', dist.d, 'var(--amber)'),
+          bar('校核中', dist.c, 'var(--accent)'),
+          bar('已出清单', dist.b, 'var(--green)'),
+          bar('已完成', dist.f, 'var(--gray)'),
+          bar('已归档', dist.a, 'var(--text3)'),
+          bar('超期（预计结束已过）', dist.od, 'var(--red)')
         ]" :key="b.name" class="kv-row" style="margin:0">
           <div class="k" style="min-width:150px">{{ b.name }} <b :style="{ color: b.color }">{{ b.n }}</b></div>
           <div style="flex:1"><div class="prog-bar" style="max-width:340px"><div class="prog-fill" :style="{ width: b.pct + '%', background: b.color }"></div></div></div>

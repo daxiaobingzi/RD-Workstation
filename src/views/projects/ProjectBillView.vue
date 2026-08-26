@@ -71,7 +71,7 @@ const maxQ = computed(() => {
 
 function catOf (r) { return r.cat }
 const CATS = ['前端设备', '后端设备', '管材线缆', '辅材']
-const CAT_COLORS = { '前端设备': '#6a5fc1', '后端设备': '#38bdf8', '管材线缆': '#34d399', '辅材': '#F7A501' }
+const CAT_COLORS = { '前端设备': 'var(--accent)', '后端设备': 'var(--primary)', '管材线缆': 'var(--green)', '辅材': 'var(--amber)' }
 
 function genBill () {
   const { bill, diff } = store.prepareBill(p.value)

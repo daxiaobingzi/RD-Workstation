@@ -293,8 +293,8 @@ onBeforeUnmount(() => layout.setActions([]))
         <span class="badge red">已超 {{ -daysFrom(p.预计结束日期) }} 天</span>
       </div>
       <div class="prog" style="flex-basis:100%">
-        <div class="prog-bar"><div class="prog-fill" :style="{ width: progress + '%', background: p.状态 === '已完成' || p.状态 === '已归档' ? '#34d399' : '#6a5fc1' }"></div></div>
-      </div>
+          <div class="prog-bar"><div class="prog-fill" :style="{ width: progress + '%', background: p.状态 === '已完成' || p.状态 === '已归档' ? 'var(--green)' : 'var(--primary)' }"></div></div>
+        </div>
     </div>
 
     <!-- ② 子系统轨道（页签） -->
