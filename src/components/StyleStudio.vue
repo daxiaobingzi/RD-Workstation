@@ -21,12 +21,12 @@ function colorOf (vars, k, def) {
   const m = String(v).match(/#[0-9a-fA-F]{6}|rgba?\([^)]+\)/)
   return m ? m[0] : def
 }
-function presetSwatch (s) { return s.swatch || ['#0a84ff', '#00a5ad', '#eef3fb'] }
+function presetSwatch (s) { return s.swatch || ['#2563eb', '#0891b2', '#f6f8fc'] }
 function customSwatch (c) {
   return [
-    colorOf(c.light || {}, '--primary', '#0a84ff'),
-    colorOf(c.light || {}, '--accent', '#00a5ad'),
-    colorOf(c.light || {}, '--bg', '#eef3fb')
+    colorOf(c.light || {}, '--primary', '#2563eb'),
+    colorOf(c.light || {}, '--accent', '#0891b2'),
+    colorOf(c.light || {}, '--bg', '#f6f8fc')
   ]
 }
 

@@ -1,117 +1,120 @@
-/* ===== 弱电智能化设计工作台 · 全局样式 · "iOS 26 Liquid Glass" 体系 =====
-   方向：把弱电设计台做成「运行在晶莹玻璃上的工程台」。
-   - 壁纸 = 明亮通透的多彩柔光（蓝→紫→粉→暖），主题色跟随系统色；
-   - 卡片/面板 = 液态玻璃：半透明白 + backdrop 模糊饱和 + 顶部高光 + 柔和投影；
-   - 控件 = 胶囊按钮 / 大圆角 / 玻璃输入，按压与 hover 带弹性微动；
-   - 排版 = large-title 加粗标题、收敛字距，数字用 tabular 等宽。
-   亮色为默认（iOS 观感），暗色为深色琉璃。 */
+/* ===== 弱电智能化设计工作台 · 全局样式 · 工程蓝 + 液态玻璃体系 =====
+   设计依据：MASTER.md（ui-ux-pro-max 设计系统）
+   - 信任蓝 #2563EB 主操作、工程橙 #EA580C 强调/关键数据、青 #0891B2 路由标识；
+   - 卡片/面板 = 半透玻璃 + backdrop 模糊 + 顶部高光 + 柔和投影；
+   - 控件 = 胶囊按钮 / 大圆角 / 玻璃输入，hover 不引起布局位移；
+   - 排版 = 系统中文族 + 拉丁 SF/PJS，数字用等宽；
+   - 间距/圆角走 --space-* / --radius-* 阶梯；focus-visible 全局可见。
+   亮色为默认，暗色为石板深色琉璃。 */
 
 :root{
-  --mono:ui-monospace,"SF Mono","SFMono-Regular","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
-  /* ---- 亮色 Liquid Glass ---- */
-  --bg:#eef3fb;
-  --bg2:#f6f9ff; --bg3:#e8eef9;
-  --glass:rgba(255,255,255,.62);
-  --glass-2:rgba(255,255,255,.78);
-  --glass-3:rgba(250,252,255,.9);
-  --glass-edge:rgba(255,255,255,.85);
-  --line:rgba(120,150,200,.26);
-  --line2:rgba(120,150,200,.4);
-  --line3:rgba(110,140,190,.55);
-  --text:#18324f; --text2:#5a6f8c; --text3:#8c9cb4;
-  --strong-text:#0d2440;
-  /* 系统蓝系（iOS accent） */
-  --primary:#0a84ff; --primary-d:#0071e3; --primary-hover:#3b9bff; --primary-l:rgba(10,132,255,.12);
-  --accent:#00a5ad; --accent-l:rgba(0,165,173,.1);
-  --on-primary:#ffffff;
-  --orange:#ff8f1f; --amber:#f2a93b; --lime:#8fca2b;
-  --green:#30c086; --green-l:rgba(48,192,134,.12); --green-ink:#1f9c6d; --green-line:rgba(48,192,134,.36);
-  --red:#ff6b5f; --red-l:rgba(255,107,95,.12); --red-ink:#e54b40; --red-line:rgba(255,107,95,.36);
-  --amber-l:rgba(242,169,59,.13); --amber-ink:#c47f13; --amber-line:rgba(242,169,59,.4);
-  --gray:#7d8fa8; --gray-bg:rgba(125,143,168,.13); --gray-ink:#6b7e99; --gray-line:rgba(125,143,168,.28);
-  --blue-bg:rgba(10,132,255,.1); --blue-ink:#0a84ff; --blue-line:rgba(10,132,255,.32);
-  --radius:22px;
-  --shadow:0 1px 2px rgba(30,60,110,.05), 0 12px 40px rgba(60,90,150,.14);
-  --shadow-lg:0 2px 6px rgba(30,60,110,.06), 0 24px 70px rgba(60,90,150,.2);
-  --card-sheen:rgba(255,255,255,.9);
-  --glass-1:rgba(255,255,255,.5); --glass-2:rgba(255,255,255,.68);
-  --input-bg:rgba(255,255,255,.6); --input-border:rgba(120,150,200,.35);
-  --input-focus-ring:rgba(10,132,255,.25);
+  /* ---- 字体（MASTER §3） ---- */
+  --font-body:-apple-system,"SF Pro Text","Plus Jakarta Sans","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  --font-mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  --mono:var(--font-mono);
+  --fs-xs:12px; --fs-sm:13px; --fs-md:14.5px; --fs-lg:17px; --fs-xl:22px; --fs-2xl:30px; --lh:1.55;
+  /* ---- 间距 / 圆角阶梯（MASTER §4） ---- */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-6:24px; --space-8:32px;
+  --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius:18px;
+  /* ---- 亮色 · 专业工程基调（MASTER §2） ---- */
+  --bg:#f6f8fc; --bg2:#fbfcfe; --bg3:#eef2f7;
+  --glass:rgba(255,255,255,.68); --glass-2:rgba(255,255,255,.84); --glass-3:rgba(255,255,255,.96);
+  --card:var(--glass-3); --glass-edge:rgba(255,255,255,.92);
+  --line:rgba(148,163,184,.28); --line2:rgba(148,163,184,.45); --line3:rgba(120,140,165,.62);
+  --text:#1e293b; --text2:#475569; --text3:#94a3b8; --strong-text:#0f172a;
+  /* 信任蓝 · 主操作 */
+  --primary:#2563eb; --primary-d:#1d4ed8; --primary-hover:#3b82f6; --primary-l:rgba(37,99,235,.12);
+  --accent:#0891b2; --accent-l:rgba(8,145,178,.1); --on-primary:#ffffff;
+  /* 工程橙 · 强调/关键数据 */
+  --orange:#ea580c; --amber:#d97706; --amber-l:rgba(217,119,6,.13); --amber-ink:#b45309; --amber-line:rgba(217,119,6,.4);
+  --lime:#65a30d;
+  --green:#16a34a; --green-l:rgba(22,163,74,.12); --green-ink:#15803d; --green-line:rgba(22,163,74,.36);
+  --red:#dc2626; --red-l:rgba(220,38,38,.12); --red-ink:#b91c1c; --red-line:rgba(220,38,38,.36);
+  --gray:#94a3b8; --gray-bg:rgba(148,163,184,.13); --gray-ink:#64748b; --gray-line:rgba(148,163,184,.28);
+  --blue-bg:rgba(37,99,235,.1); --blue-ink:#2563eb; --blue-line:rgba(37,99,235,.32);
+  /* 投影 / 表面 */
+  --shadow:0 1px 2px rgba(15,23,42,.05), 0 12px 36px rgba(30,41,59,.12);
+  --shadow-lg:0 2px 6px rgba(15,23,42,.06), 0 24px 64px rgba(30,41,59,.18);
+  --card-sheen:rgba(255,255,255,.92);
+  --glass-1:rgba(255,255,255,.55); --glass-2:rgba(255,255,255,.72);
+  --input-bg:rgba(255,255,255,.7); --input-border:rgba(148,163,184,.4); --input-focus-ring:rgba(37,99,235,.22);
+  --ring:#2563eb66;
   --grid-line:transparent; --grid-major:transparent;
-  /* 壁纸光斑 */
-  --blob-1:rgba(90,160,255,.55); --blob-2:rgba(178,140,255,.5); --blob-3:rgba(255,150,190,.42); --blob-4:rgba(255,200,120,.5);
-  --glow-a:rgba(10,132,255,.5); --glow-b:rgba(178,140,255,.45);
-  --sb-bg:rgba(255,255,255,.5); --sb-line:rgba(120,150,200,.22); --sb-text:#5d7190; --sb-hover:rgba(10,132,255,.09);
-  --brand-text:#0d2440; --brand-logo-shadow:0 8px 24px rgba(10,132,255,.35), 0 4px 10px rgba(60,90,150,.2);
-  --nav-active-bg:linear-gradient(90deg,rgba(10,132,255,.16),rgba(10,132,255,.05));
-  --tab-active-bg:linear-gradient(135deg,#0a84ff,#4f9fff);
-  --tab-active-shadow:0 6px 18px rgba(10,132,255,.4);
-  --title-grad:linear-gradient(90deg,#0d2440,#0a84ff);
-  --th-bg:rgba(10,132,255,.06); --th-ink:#0a84ff; --tbl-hover:rgba(10,132,255,.05); --td-line:rgba(120,150,200,.18);
-  --chip-bg:rgba(255,255,255,.55); --model-bg:rgba(30,60,110,.16); --brand-card-bg:rgba(255,255,255,.4);
-  --prog-track:rgba(120,150,200,.2);
-  --mask-bg:rgba(20,35,60,.35);
-  --mnav-bg:rgba(250,252,255,.8);
-  --scroll-track:transparent; --scroll-thumb:rgba(120,150,200,.4); --scroll-thumb-hover:rgba(120,150,200,.6);
-  --sync-off:#ff9f0a; --sync-off-glow:rgba(255,159,10,.55);
-  --btn-primary-bd:rgba(255,255,255,.35); --btn-primary-glow:0 8px 22px rgba(10,132,255,.35); --btn-primary-glow-h:0 12px 28px rgba(10,132,255,.48);
-  --stat-grad:linear-gradient(180deg,rgba(255,255,255,.75),rgba(255,255,255,.5));
-  --hover-glow:0 0 0 1px rgba(255,255,255,.9), 0 16px 44px rgba(60,90,150,.22);
-  --proj-hover-glow:0 0 0 1px rgba(255,255,255,.95), 0 20px 50px rgba(60,90,150,.26);
-  --corner-a:rgba(10,132,255,.5); --corner-b:rgba(0,165,173,.4);
+  /* 壁纸光斑（克制，避免花哨） */
+  --blob-1:rgba(96,165,250,.32); --blob-2:rgba(34,211,238,.2); --blob-3:rgba(148,163,184,.18); --blob-4:rgba(37,99,235,.12);
+  --glow-a:rgba(37,99,235,.32); --glow-b:rgba(8,145,178,.2);
+  /* 侧栏 / 导航 */
+  --sb-bg:rgba(255,255,255,.55); --sb-line:rgba(148,163,184,.2); --sb-text:#5b6b82; --sb-hover:rgba(37,99,235,.08);
+  --brand-text:#0f172a; --brand-logo-shadow:0 8px 22px rgba(37,99,235,.3), 0 4px 10px rgba(30,41,59,.18);
+  --nav-active-bg:linear-gradient(90deg,rgba(37,99,235,.14),rgba(37,99,235,.04));
+  --tab-active-bg:linear-gradient(135deg,#2563eb,#3b82f6);
+  --tab-active-shadow:0 6px 18px rgba(37,99,235,.38);
+  --title-grad:linear-gradient(90deg,#0f172a,#2563eb);
+  --th-bg:rgba(37,99,235,.06); --th-ink:#2563eb; --tbl-hover:rgba(37,99,235,.05); --td-line:rgba(148,163,184,.18);
+  --chip-bg:rgba(255,255,255,.6); --model-bg:rgba(30,41,59,.14); --brand-card-bg:rgba(255,255,255,.45);
+  --prog-track:rgba(148,163,184,.22);
+  --mask-bg:rgba(15,23,42,.38);
+  --mnav-bg:rgba(250,252,255,.82);
+  --scroll-track:transparent; --scroll-thumb:rgba(148,163,184,.4); --scroll-thumb-hover:rgba(148,163,184,.62);
+  --sync-off:#f59e0b; --sync-off-glow:rgba(245,158,11,.55);
+  --btn-primary-bd:rgba(255,255,255,.35); --btn-primary-glow:0 8px 22px rgba(37,99,235,.32); --btn-primary-glow-h:0 12px 28px rgba(37,99,235,.44);
+  --stat-grad:linear-gradient(180deg,rgba(255,255,255,.78),rgba(255,255,255,.5));
+  --hover-glow:0 0 0 1px rgba(255,255,255,.92), 0 16px 42px rgba(30,41,59,.2);
+  --proj-hover-glow:0 0 0 1px rgba(255,255,255,.95), 0 20px 48px rgba(30,41,59,.24);
+  --corner-a:rgba(37,99,235,.5); --corner-b:rgba(8,145,178,.45);
   /* 壁纸主渐变（风格系统可覆盖） */
-  --wallpaper:linear-gradient(158deg,#dcecff 0%,#edf0ff 26%,#f7eefd 52%,#fff1f6 74%,#fff6e9 100%);
+  --wallpaper:linear-gradient(158deg,#f2f6fd 0%,#eef3fb 30%,#f6f3fd 55%,#f2fbfc 78%,#f7f9fd 100%);
 }
 
 :root[data-theme="dark"]{
-  --bg:#0e1420;
-  --bg2:#141c2c; --bg3:#182238;
-  --glass:rgba(24,32,50,.6);
-  --glass-2:rgba(30,40,62,.75);
-  --glass-3:rgba(34,45,70,.88);
-  --glass-edge:rgba(255,255,255,.16);
-  --line:rgba(150,180,230,.16);
-  --line2:rgba(150,180,230,.28);
-  --line3:rgba(150,180,230,.42);
-  --text:#e9f0fb; --text2:#a9b8d0; --text3:#7183a0;
-  --strong-text:#ffffff;
-  --primary:#3da9ff; --primary-d:#0a84ff; --primary-hover:#5cb8ff; --primary-l:rgba(61,169,255,.16);
-  --accent:#3fd0d6; --accent-l:rgba(63,208,214,.14);
-  --on-primary:#061626;
-  --orange:#ff9f3d; --amber:#f5b544; --lime:#a3d54a;
-  --green:#3dd092; --green-l:rgba(61,208,146,.14); --green-ink:#6fdfb0; --green-line:rgba(61,208,146,.34);
-  --red:#ff8076; --red-l:rgba(255,128,118,.14); --red-ink:#ff9c94; --red-line:rgba(255,128,118,.34);
-  --amber-l:rgba(245,181,68,.15); --amber-ink:#ffd27a; --amber-line:rgba(245,181,68,.38);
+  --bg:#0b101d;
+  --bg2:#111a2c; --bg3:#172039;
+  --glass:rgba(28,38,60,.82);
+  --glass-2:rgba(34,45,70,.92);
+  --glass-3:rgba(30,41,64,.97);
+  --card:var(--glass-3);
+  --glass-edge:rgba(170,195,235,.22);
+  --line:rgba(160,185,220,.2);
+  --line2:rgba(160,185,220,.34);
+  --line3:rgba(170,195,235,.5);
+  --text:#eaf1fa; --text2:#c3cfdf; --text3:#93a5bd; --strong-text:#ffffff;
+  --primary:#60a5fa; --primary-d:#2563eb; --primary-hover:#7cb3fc; --primary-l:rgba(96,165,250,.16);
+  --accent:#22d3ee; --accent-l:rgba(34,211,238,.14);
+  --on-primary:#0b1b3b;
+  --orange:#fb923c; --amber:#fbbf24; --amber-l:rgba(251,191,36,.15); --amber-ink:#ffd27f; --amber-line:rgba(251,191,36,.38);
+  --lime:#a3e635;
+  --green:#4ade80; --green-l:rgba(74,222,128,.14); --green-ink:#86efac; --green-line:rgba(74,222,128,.34);
+  --red:#f87171; --red-l:rgba(248,113,113,.14); --red-ink:#fca5a5; --red-line:rgba(248,113,113,.34);
   --gray:#8b9cb6; --gray-bg:rgba(139,156,182,.15); --gray-ink:#aebdd2; --gray-line:rgba(139,156,182,.3);
-  --blue-bg:rgba(61,169,255,.15); --blue-ink:#74c0ff; --blue-line:rgba(61,169,255,.36);
-  --shadow:0 2px 6px rgba(0,0,0,.25), 0 16px 44px rgba(0,0,0,.42);
-  --shadow-lg:0 4px 12px rgba(0,0,0,.3), 0 28px 80px rgba(0,0,0,.5);
-  --card-sheen:rgba(255,255,255,.1);
-  --glass-1:rgba(255,255,255,.05); --glass-2:rgba(255,255,255,.09);
-  --input-bg:rgba(255,255,255,.07); --input-border:rgba(150,180,230,.25);
-  --input-focus-ring:rgba(61,169,255,.28);
+  --blue-bg:rgba(96,165,250,.15); --blue-ink:#93c5fd; --blue-line:rgba(96,165,250,.36);
+  --shadow:0 2px 6px rgba(0,0,0,.34), 0 16px 44px rgba(0,0,0,.5);
+  --shadow-lg:0 4px 12px rgba(0,0,0,.4), 0 26px 76px rgba(0,0,0,.58);
+  --card-sheen:rgba(255,255,255,.12);
+  --glass-1:rgba(255,255,255,.08); --glass-2:rgba(255,255,255,.12);
+  --input-bg:rgba(255,255,255,.08); --input-border:rgba(170,195,235,.34); --input-focus-ring:rgba(96,165,250,.32);
+  --ring:#60a5fa80;
   --grid-line:transparent; --grid-major:transparent;
-  --blob-1:rgba(40,90,200,.4); --blob-2:rgba(120,80,220,.34); --blob-3:rgba(190,60,130,.24); --blob-4:rgba(200,130,40,.22);
-  --glow-a:rgba(61,169,255,.28); --glow-b:rgba(178,140,255,.24);
-  --sb-bg:rgba(14,20,32,.5); --sb-line:rgba(150,180,230,.14); --sb-text:#8fa1bd; --sb-hover:rgba(61,169,255,.14);
-  --brand-text:#ffffff; --brand-logo-shadow:0 10px 28px rgba(10,132,255,.4), 0 4px 12px rgba(0,0,0,.4);
-  --nav-active-bg:linear-gradient(90deg,rgba(61,169,255,.24),rgba(61,169,255,.07));
-  --tab-active-bg:linear-gradient(135deg,#0a84ff,#4f9fff);
-  --tab-active-shadow:0 6px 20px rgba(10,132,255,.42);
-  --title-grad:linear-gradient(90deg,#ffffff,#74c0ff);
-  --th-bg:rgba(61,169,255,.1); --th-ink:#74c0ff; --tbl-hover:rgba(61,169,255,.07); --td-line:rgba(150,180,230,.12);
-  --chip-bg:rgba(255,255,255,.06); --model-bg:rgba(0,0,0,.35); --brand-card-bg:rgba(255,255,255,.04);
-  --prog-track:rgba(150,180,230,.16);
-  --mask-bg:rgba(5,10,20,.5);
-  --mnav-bg:rgba(16,22,34,.85);
-  --scroll-track:transparent; --scroll-thumb:rgba(150,180,230,.3); --scroll-thumb-hover:rgba(150,180,230,.45);
-  --sync-off:#ffb340; --sync-off-glow:rgba(255,179,64,.5);
-  --btn-primary-bd:rgba(255,255,255,.3); --btn-primary-glow:0 8px 24px rgba(10,132,255,.4); --btn-primary-glow-h:0 12px 30px rgba(10,132,255,.55);
-  --stat-grad:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03));
-  --hover-glow:0 0 0 1px rgba(255,255,255,.14), 0 20px 50px rgba(0,0,0,.45);
-  --proj-hover-glow:0 0 0 1px rgba(255,255,255,.16), 0 24px 60px rgba(0,0,0,.5);
-  --corner-a:rgba(61,169,255,.55); --corner-b:rgba(63,208,214,.4);
-  --wallpaper:linear-gradient(158deg,#0f1830 0%,#181333 28%,#241231 55%,#231509 82%,#122018 100%);
+  --blob-1:rgba(37,99,235,.38); --blob-2:rgba(8,145,178,.3); --blob-3:rgba(100,116,240,.22); --blob-4:rgba(51,65,85,.25);
+  --glow-a:rgba(96,165,250,.28); --glow-b:rgba(34,211,238,.22);
+  --sb-bg:rgba(12,17,28,.68); --sb-line:rgba(170,195,235,.18); --sb-text:#9fb0c8; --sb-hover:rgba(96,165,250,.15);
+  --brand-text:#ffffff; --brand-logo-shadow:0 10px 26px rgba(37,99,235,.4), 0 4px 12px rgba(0,0,0,.45);
+  --nav-active-bg:linear-gradient(90deg,rgba(96,165,250,.24),rgba(96,165,250,.06));
+  --tab-active-bg:linear-gradient(135deg,#2563eb,#60a5fa);
+  --tab-active-shadow:0 6px 20px rgba(37,99,235,.4);
+  --title-grad:linear-gradient(90deg,#ffffff,#93c5fd);
+  --th-bg:rgba(96,165,250,.1); --th-ink:#93c5fd; --tbl-hover:rgba(96,165,250,.07); --td-line:rgba(160,185,220,.12);
+  --chip-bg:rgba(255,255,255,.06); --model-bg:rgba(0,0,0,.35); --brand-card-bg:rgba(255,255,255,.05);
+  --prog-track:rgba(160,185,220,.16);
+  --mask-bg:rgba(6,10,18,.52);
+  --mnav-bg:rgba(16,22,34,.86);
+  --scroll-track:transparent; --scroll-thumb:rgba(160,185,220,.35); --scroll-thumb-hover:rgba(160,185,220,.5);
+  --sync-off:#fbbf24; --sync-off-glow:rgba(251,191,36,.5);
+  --btn-primary-bd:rgba(255,255,255,.3); --btn-primary-glow:0 8px 24px rgba(37,99,235,.42); --btn-primary-glow-h:0 12px 30px rgba(37,99,235,.56);
+  --stat-grad:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05));
+  --hover-glow:0 0 0 1px rgba(255,255,255,.16), 0 20px 50px rgba(0,0,0,.48);
+  --proj-hover-glow:0 0 0 1px rgba(255,255,255,.18), 0 24px 60px rgba(0,0,0,.52);
+  --corner-a:rgba(96,165,250,.55); --corner-b:rgba(34,211,238,.42);
+  --wallpaper:linear-gradient(158deg,#0c1322 0%,#111a30 30%,#121a2e 58%,#0f1524 100%);
 }
 /* iOS 16+ 默认亮、15 及以下按 prefers-color-scheme；此处默认亮 = Liquid Glass 主视觉 */
 :root{color-scheme:light}
@@ -120,13 +123,19 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
-  font-family:"-apple-system","BlinkMacSystemFont","SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-family:var(--font-body);
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
   background:var(--bg);
-  color:var(--text);font-size:15px;line-height:1.55;
+  color:var(--text);font-size:var(--fs-md);line-height:var(--lh);
   letter-spacing:.01em;
   transition:background-color .35s ease,color .35s ease}
+/* 可访问性：键盘聚焦始终可见（MASTER §7） */
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:4px}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
+/* 禁用态：原生语义 + 视觉降级，无交互（MASTER §5） */
+button:disabled,.btn:disabled,button[disabled],[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+.btn:disabled:hover,.btn:disabled:active{transform:none;box-shadow:var(--shadow);filter:none}
 /* 多彩柔光壁纸（液态玻璃内容层） */
 body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
   background:
@@ -139,7 +148,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 :root[data-theme="dark"] body::before{opacity:.4}
 /* 壁纸流动 */
 body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
-  background:radial-gradient(120vw 90vh at 50% -20%,transparent 60%,rgba(120,90,220,.12));filter:blur(40px)}
+  background:radial-gradient(120vw 90vh at 50% -20%,transparent 60%,var(--glow-a));filter:blur(40px)}
 .app{position:relative;z-index:0}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,select,textarea{font-family:inherit;font-size:16px;color:var(--text);
@@ -187,7 +196,7 @@ a{color:var(--primary)}
 .sb-expand:hover{color:var(--primary);transform:scale(1.06)}
 .brand{display:flex;align-items:center;gap:11px;padding:20px 18px 14px;position:relative;padding-right:52px}
 .brand-logo{width:42px;height:42px;border-radius:13px;position:relative;flex-shrink:0;overflow:hidden;
-  background:linear-gradient(135deg,#0a84ff 0%,#5fa8ff 45%,#00b6c9 100%);
+  background:linear-gradient(135deg,#2563eb 0%,#3b82f6 45%,#0891b2 100%);
   box-shadow:var(--brand-logo-shadow),inset 0 1px 0 rgba(255,255,255,.5);
   color:#fff;display:flex;align-items:center;justify-content:center}
 /* logo 玻璃高光 */
@@ -234,7 +243,7 @@ a{color:var(--primary)}
 .theme-switch button{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--text2);transition:all .2s;white-space:nowrap}
 .theme-switch button svg{width:15px;height:15px;flex-shrink:0}
 .theme-switch button:hover{color:var(--primary)}
-.theme-switch button.active{background:var(--primary);color:#fff;box-shadow:0 3px 10px rgba(10,132,255,.35)}
+.theme-switch button.active{background:var(--primary);color:var(--on-primary);box-shadow:0 3px 10px var(--tab-active-shadow)}
 
 /* ===== 通用组件：卡片 = 液态玻璃 ===== */
 .card{background:var(--glass);border:1px solid var(--glass-edge);border-radius:var(--radius);

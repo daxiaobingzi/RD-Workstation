@@ -8,9 +8,9 @@ export const PRESET_STYLES = [
   {
     id: 'liquid-glass',
     name: '液态玻璃',
-    desc: 'iOS 26 Liquid Glass：通透玻璃 + 多彩柔光壁纸 + 系统蓝',
+    desc: '工程蓝 + 液态玻璃：信任蓝主色 + 工程橙强调，专业清爽',
     tags: ['默认', '玻璃', '亮色'],
-    swatch: ['#0a84ff', '#00a5ad', '#f7eefd'],
+    swatch: ['#2563eb', '#0891b2', '#f2f6fd'],
     light: {},
     dark: {}
   },

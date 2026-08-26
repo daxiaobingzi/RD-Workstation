@@ -109,7 +109,7 @@ function styleMeta (id) {
   const preset = PRESET_STYLES.find(p => p.id === id)
   if (preset) return { id, name: preset.name, desc: preset.desc, tags: preset.tags, swatch: preset.swatch, custom: false }
   const custom = customStyles.value.find(c => c.id === id)
-  if (custom) return { id, name: custom.name, desc: custom.desc || '自定义风格', tags: ['自定义'], swatch: [custom.light?.['--primary'] || '#0a84ff', custom.light?.['--accent'] || '#00a5ad', custom.light?.['--bg'] || '#eef3fb'], custom: true }
+  if (custom) return { id, name: custom.name, desc: custom.desc || '自定义风格', tags: ['自定义'], swatch: [custom.light?.['--primary'] || '#2563eb', custom.light?.['--accent'] || '#0891b2', custom.light?.['--bg'] || '#f6f8fc'], custom: true }
   return null
 }
 
