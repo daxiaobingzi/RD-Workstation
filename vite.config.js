@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // GitHub Pages 部署在 /RD-Workstation/ 子路径
+  base: '/RD-Workstation/',
   plugins: [
     vue(),
     VitePWA({
