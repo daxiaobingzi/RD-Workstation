@@ -370,7 +370,7 @@ onBeforeUnmount(() => layout.setActions([]))
     </div>
 
     <!-- 变更影响 -->
-    <div v-if="changedAfterBill" class="card" style="border-color:rgba(245,170,50,.45)">
+    <div v-if="changedAfterBill" class="card" style="border-color:var(--amber-line)">
       <div class="card-title">变更影响 <span class="badge amber">{{ changedAfterBill }} 行数量发生变化</span></div>
       <div class="hint">设备数量变化会影响设备金额、材料数量以及施工清单。建议重新生成施工清单后再导出最终报价。</div>
       <div style="display:flex;justify-content:flex-end;margin-top:10px">

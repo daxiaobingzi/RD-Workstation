@@ -100,7 +100,7 @@ async function copyTable () {
         <div v-for="h in hist" :key="h.id" class="hist-chip" :class="{ on: active && active.id === h.id }" @click="select(h)">
           <div class="h-main">
             <span class="h-name">{{ h.name }}</span>
-            <span class="h-del" title="删除该版本" @click.stop="removeHist(h)"><VIcon name="trash" :size="13" /></span>
+            <button class="h-del" title="删除该版本" @click.stop="removeHist(h)"><VIcon name="trash" :size="12" />删除</button>
           </div>
           <div class="h-meta">
             <span class="hm">{{ fmtD(h.at) }}</span>
@@ -167,8 +167,8 @@ async function copyTable () {
 .hist-chip.on { border-color: var(--accent); background: var(--primary-l); }
 .h-main { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .h-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
-.h-del { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: var(--text3); }
-.h-del:hover { background: var(--red-l); color: var(--red); }
+.h-del { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--text3); border: 1px solid var(--line); background: var(--glass-1); transition: all .15s; flex-shrink: 0; }
+.h-del:hover { background: var(--red-l); color: var(--red); border-color: var(--red-line); }
 .h-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 .hm { font-size: 11px; color: var(--text3); }
 .hm.amt { color: var(--green); font-weight: 600; font-family: var(--mono); }
