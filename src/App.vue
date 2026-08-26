@@ -4,17 +4,19 @@ import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from './store'
 import { layout } from './composables/layout'
-import { closeDialog } from './composables/ui'
+import { closeDialog, openDialog } from './composables/ui'
 import VIcon from './components/ui/VIcon.vue'
 import ThemeSwitch from './components/layout/ThemeSwitch.vue'
 import DialogHost from './components/ui/DialogHost.vue'
 import ToastHost from './components/ui/ToastHost.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import TodayPanel from './components/TodayPanel.vue'
+import StyleStudio from './components/StyleStudio.vue'
 import ProjectsView from './views/ProjectsView.vue'
 import DatabaseView from './views/DatabaseView.vue'
 import SearchView from './views/SearchView.vue'
 import SettingsView from './views/SettingsView.vue'
+import { initStyleStudio } from './composables/style'
 
 const store = useAppStore()
 const { curTab, ready, loading, online, syncText, curView, projects, curProjId } = storeToRefs(store)
@@ -68,6 +70,9 @@ function switchTab (t) {
   store.curSub = null
 }
 
+// 风格工作室弹窗（经 DialogHost 渲染）
+function openStyleStudio () { openDialog(StyleStudio, {}) }
+
 function openProject (id) {
   store.curTab = 'projects'
   store.curView = 'detail'
@@ -93,6 +98,7 @@ function onKeydown (e) {
 
 onMounted(() => {
   store.init()
+  initStyleStudio()
   window.addEventListener('keydown', onKeydown)
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
@@ -146,6 +152,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   :disabled="a.disabled" @click="a.onClick">
             <VIcon :name="a.icon || 'zap'" /><span>{{ a.label }}</span>
           </button>
+          <button class="btn btn-ghost" title="界面风格" @click="openStyleStudio"><VIcon name="palette" /><span>风格</span></button>
         </div>
         <ThemeSwitch />
       </div>

@@ -2,6 +2,7 @@
 // 主题切换：白天 / 黑夜 / 随系统（状态 localStorage 'wb_elv_theme'，与初版一致）
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import VIcon from '../ui/VIcon.vue'
+import { styleStudio } from '../../composables/style'
 
 const KEY = 'wb_elv_theme'
 const mode = ref('system')
@@ -19,6 +20,8 @@ function apply () {
   const m = readMode()
   mode.value = m
   document.documentElement.setAttribute('data-theme', m === 'system' ? sysTheme() : m)
+  // 切换明暗后重放当前 UI 风格（风格分 light/dark 两套变量）
+  styleStudio.reapply()
 }
 function onChange () { if (readMode() === 'system') apply() }
 

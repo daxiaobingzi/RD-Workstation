@@ -59,6 +59,8 @@
   --hover-glow:0 0 0 1px rgba(255,255,255,.9), 0 16px 44px rgba(60,90,150,.22);
   --proj-hover-glow:0 0 0 1px rgba(255,255,255,.95), 0 20px 50px rgba(60,90,150,.26);
   --corner-a:rgba(10,132,255,.5); --corner-b:rgba(0,165,173,.4);
+  /* 壁纸主渐变（风格系统可覆盖） */
+  --wallpaper:linear-gradient(158deg,#dcecff 0%,#edf0ff 26%,#f7eefd 52%,#fff1f6 74%,#fff6e9 100%);
 }
 
 :root[data-theme="dark"]{
@@ -109,6 +111,7 @@
   --hover-glow:0 0 0 1px rgba(255,255,255,.14), 0 20px 50px rgba(0,0,0,.45);
   --proj-hover-glow:0 0 0 1px rgba(255,255,255,.16), 0 24px 60px rgba(0,0,0,.5);
   --corner-a:rgba(61,169,255,.55); --corner-b:rgba(63,208,214,.4);
+  --wallpaper:linear-gradient(158deg,#0f1830 0%,#181333 28%,#241231 55%,#231509 82%,#122018 100%);
 }
 /* iOS 16+ 默认亮、15 及以下按 prefers-color-scheme；此处默认亮 = Liquid Glass 主视觉 */
 :root{color-scheme:light}
@@ -131,7 +134,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
     radial-gradient(50vw 54vh at -6% 22%,var(--blob-2),transparent 60%),
     radial-gradient(46vw 50vh at 108% 72%,var(--blob-3),transparent 62%),
     radial-gradient(52vw 56vh at 14% 108%,var(--blob-4),transparent 62%),
-    linear-gradient(158deg,#dcecff 0%,#edf0ff 26%,#f7eefd 52%,#fff1f6 74%,#fff6e9 100%);
+    var(--wallpaper);
   transition:opacity .35s}
 :root[data-theme="dark"] body::before{opacity:.4}
 /* 壁纸流动 */
