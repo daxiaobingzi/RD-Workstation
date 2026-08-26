@@ -19,6 +19,17 @@ import SettingsView from './views/SettingsView.vue'
 const store = useAppStore()
 const { curTab, ready, loading, online, syncText, curView, projects, curProjId } = storeToRefs(store)
 const paletteOpen = ref(false)
+// 侧边栏折叠状态（跨会话记忆）
+const SB_KEY = 'wb_elv_sidebar'
+const sbOpen = ref(true)
+function readSb () {
+  try { return localStorage.getItem(SB_KEY) !== '0' } catch (e) { return true }
+}
+sbOpen.value = readSb()
+function toggleSb () {
+  sbOpen.value = !sbOpen.value
+  try { localStorage.setItem(SB_KEY, sbOpen.value ? '1' : '0') } catch (e) {}
+}
 
 const NAV = [
   ['projects', 'folder', '项目轨道'],
@@ -88,9 +99,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="app">
-    <!-- PC 侧边栏：图纸目录 + 图签栏 -->
-    <aside class="sidebar">
+  <div class="app" :class="{ 'sb-collapsed': !sbOpen }">
+    <!-- 折叠后的展开按钮 -->
+    <button v-if="!sbOpen" class="sb-expand" title="展开侧边栏" @click="toggleSb"><VIcon name="list" :size="18" /></button>
+
+    <!-- PC 侧边栏：玻璃浮动面板（可折叠） -->
+    <aside class="sidebar" :class="{ open: sbOpen }">
+      <div class="sb-collapse" title="收起侧边栏" @click="toggleSb"><VIcon name="x" :size="14" /></div>
       <div class="brand">
         <div class="brand-logo"><VIcon name="zap" :size="20" /></div>
         <div>
