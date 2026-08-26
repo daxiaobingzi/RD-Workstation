@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { LS, LS_NOTES, APP_VER, defaultSettings, BUDGET_TIERS } from '../db/constants'
 import { storage, COLLECTIONS } from '../db/storage'
-import { seedProjects, seedPoints, seedDevices, seedNotes, seedMeta, seedAllSettings } from '../db/seeds'
+import { seedProjects, seedPoints, seedDevices, seedNotes, seedMeta, seedAllSettings, seedQuotas, patchTemplatesAuto } from '../db/seeds'
 import { uid, todayStr, nowISO, tierName, stamp2 } from '../db/format'
 import {
   ensureDesignQuotas, quotaRuleFor, calcRuleQty, ratioSuggestedQty, subTotalFront,
@@ -117,6 +117,11 @@ export const useAppStore = defineStore('app', () => {
     if (!settings.value.templates) settings.value.templates = []
     if (!settings.value.designStages) settings.value.designStages = ['方案设计', '初步设计', '施工图设计', '技术交底', '竣工']
     ensureDesignQuotas(settings.value)
+    // 旧数据兼容：定额库为空时补齐默认定额；旧模板设备缺 auto 密度时从种子同名模板合并
+    if (!settings.value.designQuotas || !settings.value.designQuotas.length) {
+      settings.value.designQuotas = seedQuotas()
+    }
+    patchTemplatesAuto(settings.value.templates)
 
     normalizeLegacyRatioTargets()
     normalizePointDeviceIds()
@@ -203,6 +208,65 @@ export const useAppStore = defineStore('app', () => {
     if (!device) return
     device.chain = chain || null
     await saveAll()
+  }
+
+  // ---------- 价格治理 ----------
+  /** 全库缺价体检：返回 [ { device, brand, model, unitPrice, sub, msg } ]；msg = 未配价 | 空品牌 | 无单价 */
+  function priceAudit () {
+    const out = []
+    devices.value.filter(d => d.status !== '归档').forEach(d => {
+      const bs = devBrands.value[d.id] || []
+      if (!bs.length) {
+        out.push({ device: d, brand: '', model: '', unitPrice: null, sub: d.subsystem, msg: '未配品牌价格' })
+        return
+      }
+      bs.forEach(b => {
+        if (!b.brand) out.push({ device: d, brand: '', model: b.model || '', unitPrice: b.unitPrice != null ? Number(b.unitPrice) : null, sub: d.subsystem, msg: '空品牌' })
+        else if (b.unitPrice == null || b.unitPrice === '') out.push({ device: d, brand: b.brand, model: b.model || '', unitPrice: null, sub: d.subsystem, msg: '有品牌无单价' })
+      })
+    })
+    return out
+  }
+
+  /** 批量调价：对指定品牌（或全部）的单价统一调整；pct = 百分比（10 为 +10%，-5 为 -5%），round 取值 */
+  function bulkAdjustPrice (brand, pct, roundTo = 10) {
+    const pctN = Number(pct) || 0
+    if (!pctN) return { devices: 0, variants: 0 }
+    let devCount = 0
+    let varCount = 0
+    Object.keys(devBrands.value).forEach(did => {
+      const list = devBrands.value[did]
+      if (!list || !list.length) return
+      let touched = false
+      list.forEach(v => {
+        if (brand && v.brand !== brand) return
+        if (v.unitPrice == null || v.unitPrice === '') return
+        const cur = Number(v.unitPrice)
+        let nv = cur * (1 + pctN / 100)
+        if (roundTo > 0) nv = Math.round(nv / roundTo) * roundTo
+        v.unitPrice = nv
+        varCount++
+        touched = true
+      })
+      if (touched) devCount++
+    })
+    return { devices: devCount, variants: varCount }
+  }
+
+  /** 品牌替换：把 oldBrand 所有型号改为 newBrand；targetOldPrice 若提供则同步替换为对应新价（近似） */
+  function replaceBrand (oldBrand, newBrand) {
+    let moved = 0
+    Object.keys(devBrands.value).forEach(did => {
+      const list = devBrands.value[did]
+      if (!list || !list.length) return
+      list.forEach(v => {
+        if (v.brand === oldBrand) {
+          v.brand = newBrand
+          moved++
+        }
+      })
+    })
+    return { moved }
   }
 
   // ---------- 项目 CRUD ----------
@@ -319,7 +383,8 @@ export const useAppStore = defineStore('app', () => {
       s.devices.forEach(d => {
         let exDev = devices.value.find(x => x.subsystem === s.name && x.name === d.name)
         if (!exDev) {
-          exDev = { id: uid('dv'), subsystem: s.name, name: d.name, spec: d.spec || '', unit: d.unit || '台', category: d.category || '前端设备', quota: d.quota || [], ratio: d.ratio || null }
+          exDev = { id: uid('dv'), subsystem: s.name, name: d.name, spec: d.spec || '', unit: d.unit || '台', category: d.category || '前端设备', quota: d.quota || [], ratio: d.ratio || null, chain: d.chain || null }
+          if (d.auto) exDev.auto = d.auto
           devices.value.push(exDev)
           addDev++
         }
@@ -349,16 +414,106 @@ export const useAppStore = defineStore('app', () => {
       id: uid('tpl'), name, 建筑类型: p.建筑类型 || '',
       subsystems: subNames.map(sn => ({
         name: sn,
-        devices: devices.value.filter(d => d.subsystem === sn && used[sn][d.name]).map(d => ({
-          name: d.name, spec: d.spec || '', unit: d.unit || '', category: d.category || '前端设备',
-          quota: d.quota || [], ratio: d.ratio || null
-        }))
+        devices: devices.value.filter(d => d.subsystem === sn && used[sn][d.name]).map(d => {
+          const dd = {
+            name: d.name, spec: d.spec || '', unit: d.unit || '', category: d.category || '前端设备',
+            quota: d.quota || [], ratio: d.ratio || null
+          }
+          if (d.auto) dd.auto = d.auto
+          if (d.chain) dd.chain = d.chain
+          return dd
+        })
       })).filter(s => s.devices.length)
     }
     if (!tpl.subsystems.length) return null
     settings.value.templates = settings.value.templates || []
     settings.value.templates.push(tpl)
     return tpl
+  }
+
+  /** 模板起盘：按模板生成完整项目骨架（子系统+设备+点表），并按建筑指标自动推算各前端设备的建议数量 */
+  function bootstrapFromTemplate (tpl, data) {
+    if (!tpl) return null
+    const p = newProject({
+      项目名称: data && data.项目名称 ? data.项目名称.trim() : (tpl.name ? tpl.name + '项目' : '未命名项目'),
+      项目编号: (data && data.项目编号) || '',
+      建筑类型: (data && data.建筑类型) || tpl.建筑类型 || '',
+      客户: (data && data.客户) || '',
+      项目地址: (data && data.项目地址) || '',
+      建筑面积: parseFloat((data && data.建筑面积)) || 0,
+      建筑楼层数: parseInt((data && data.建筑楼层数)) || 0,
+      房间数: parseInt((data && data.房间数)) || 0,
+      备注: '由模板「' + tpl.name + '」起盘' + ((data && data.备注) ? '；' + data.备注 : '')
+    })
+    const tr = applyTemplate(tpl, p)
+    // 按建筑指标自动推算前端设备数量：优先模板自带密度 auto（area/floor/room），其次全局设计定额
+    let autoQty = 0
+    const auto = []
+    tpl.subsystems.forEach(s => {
+      const tplDevBy = {}
+      ;(s.devices || []).forEach(td => { tplDevBy[td.name] = td })
+      points.value.filter(x => x.项目ID === p.id && x.子系统 === s.name).forEach(pt => {
+        const d = resolveDevice(devices.value, s.name, pt.设备类型, pt['设备ID'])
+        if (!d || d.category !== '前端设备') return
+        const td = tplDevBy[pt.设备类型]
+        const autoHint = td && td.auto
+        let q = 0
+        let method = ''
+        if (autoHint) {
+          const per = Number(autoHint.per) || 1
+          if (autoHint.method === 'room') { q = (parseInt(p.房间数) || 0) ? Math.ceil((parseInt(p.房间数) || 0) / per) : 0 }
+          else if (autoHint.method === 'floor') { q = (parseInt(p.建筑楼层数) || 0) ? Math.ceil((parseInt(p.建筑楼层数) || 0) * per) : 0 }
+          else { q = p.建筑面积 ? Math.ceil(p.建筑面积 / per) : 0 }
+          method = autoHint.method || 'area'
+        } else {
+          const rule = quotaRuleFor(settings.value, s.name, d.id, p.建筑类型)
+          if (rule) {
+            q = calcRuleQty(rule, p)
+            method = rule.method || 'area'
+          }
+        }
+        if (q > 0) {
+          pt.数量 = q
+          pt.备注 = (pt.备注 || '模板起盘') + '；定额推算·' + method
+          pt.updatedAt = nowISO()
+          autoQty += q
+          auto.push(d.name + '×' + q)
+        }
+      })
+    })
+    return { p, tr, autoQty, auto, subCount: tpl.subsystems.length }
+  }
+
+  /** 克隆项目并按比例缩放点位（面积法：新面积/旧面积；也可按楼层倍数） */
+  function cloneScaledProject (srcId, data) {
+    const np = copyProject(srcId)
+    const src = projectById(srcId)
+    if (!np || !src) return np
+    const newArea = parseFloat(data && data.建筑面积)
+    const oldArea = parseFloat(src.建筑面积) || 0
+    const newFloors = parseInt(data && data.建筑楼层数)
+    const oldFloors = parseInt(src.建筑楼层数) || 0
+    let scale = 1
+    if (newArea > 0 && oldArea > 0 && data && data.scaleBy === 'floor') {
+      scale = oldFloors > 0 ? newFloors / oldFloors : 1
+    } else if (newArea > 0 && oldArea > 0) {
+      scale = newArea / oldArea
+    }
+    if (scale > 0 && Math.abs(scale - 1) > 0.001) {
+      points.value.filter(x => x.项目ID === np.id).forEach(x => {
+        const n = Math.round((Number(x.数量) || 0) * scale)
+        x.数量 = Math.max(1, n)
+        x.备注 = (x.备注 || '') + '；面积缩放×' + scale.toFixed(2)
+        x.updatedAt = nowISO()
+      })
+    }
+    if (data && data.项目名称) {
+      const bn = data.项目名称.trim()
+      let name = bn; let i2 = 2
+      while (projects.value.some(x => x.项目名称 === name)) name = bn + '（' + (i2++) + '）'
+      np.项目名称 = name
+    }
+    return np
   }
 
   function deleteTemplate (id) {
@@ -738,7 +893,7 @@ export const useAppStore = defineStore('app', () => {
     newProject, updateProject, deleteProject, copyProject, setProjectStatus,
     setProjectBudget, projectBudget,
     // 模板
-    applyTemplate, saveProjectAsTemplate, deleteTemplate,
+    applyTemplate, saveProjectAsTemplate, deleteTemplate, bootstrapFromTemplate, cloneScaledProject,
     // 点位
     addPoint, savePoint, deletePoint, buildBringOut, batchSavePoints,
     importPointsCSV, autoQtyImpact, applyAutoQty,
@@ -750,6 +905,8 @@ export const useAppStore = defineStore('app', () => {
     addDevice, saveDevice, deleteDevice, copyDevice, moveDevice, resolveDevice,
     // 推导链
     chainOf, chainUnitPrice, applyChainToPoints, saveChain, deriveChain, ensureDeviceChain, isChainDevice,
+    // 价格治理
+    priceAudit, bulkAdjustPrice, replaceBrand,
     // 设置
     addSubsystem, saveSubsystem, deleteSubsystem,
     addBrand, saveBrand, deleteBrand,

@@ -9,6 +9,7 @@ import { tierName } from '../db/format'
 import VIcon from '../components/ui/VIcon.vue'
 import DeviceFormDialog from '../components/dialogs/DeviceFormDialog.vue'
 import PriceWorkbench from '../components/PriceWorkbench.vue'
+import PriceGovernDialog from '../components/dialogs/PriceGovernDialog.vue'
 
 const store = useAppStore()
 const layout = useLayout()
@@ -16,6 +17,15 @@ const { settings, devices, devBrands, devSort, points } = storeToRefs(store)
 
 const dbSub = ref(store.curSub && settings.value.subsystems.some(s => s.name === store.curSub) ? store.curSub : (settings.value.subsystems[0]?.name || '视频监控系统'))
 const mode = ref('dict') // dict | price
+
+// 全库缺价统计（价格治理按钮角标）
+const missingN = computed(() => devices.value.filter(d => {
+  const bs = devBrands.value[d.id] || []
+  if (!bs.length) return true
+  return !bs.some(b => b.brand && b.unitPrice != null && b.unitPrice !== '')
+}).length)
+
+function openGovern () { openDialog(PriceGovernDialog, {}) }
 
 const devs = computed(() => {
   const list = devices.value.filter(d => d.subsystem === dbSub.value)
@@ -96,6 +106,8 @@ function switchMode (m) {
     <div class="tabs" style="margin-bottom:10px">
       <button class="tab" :class="{ active: mode === 'dict' }" @click="switchMode('dict')">设备字典</button>
       <button class="tab" :class="{ active: mode === 'price' }" @click="switchMode('price')">价格工作台</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="openGovern"><VIcon name="zap" />价格治理{{ missingN ? ` · ${missingN} 缺价` : '' }}</button>
     </div>
 
     <template v-if="mode === 'price'">

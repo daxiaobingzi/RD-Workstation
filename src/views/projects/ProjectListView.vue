@@ -7,7 +7,8 @@ import { isOverdue, daysFrom, fmtNum } from '../../db/format'
 import { useLayout } from '../../composables/layout'
 import VIcon from '../../components/ui/VIcon.vue'
 import ProjectFormDialog from '../../components/dialogs/ProjectFormDialog.vue'
-import { openDialog, confirmBox } from '../../composables/ui'
+import BootstrapProjectDialog from '../../components/dialogs/BootstrapProjectDialog.vue'
+import { openDialog, confirmBox, promptBox } from '../../composables/ui'
 
 const store = useAppStore()
 const { projects, points, bills, notes: notesRef, projFilterVal, settings } = storeToRefs(store)
@@ -65,6 +66,9 @@ function openProject (id) {
 function newProject () {
   openDialog(ProjectFormDialog, { newProject: true })
 }
+function bootstrapProject () {
+  openDialog(BootstrapProjectDialog, {})
+}
 function board () { store.curView = 'board' }
 
 async function delProject (e, p) {
@@ -87,8 +91,22 @@ async function copyProject (e, id) {
   store.toast(`已复制为独立新项目「${np.项目名称}」`)
 }
 
+async function cloneScaled (e, p) {
+  e.stopPropagation()
+  const nm = await promptBox('新项目名称：', p.项目名称 + '（二期）', '克隆并按面积缩放', '克隆')
+  if (nm == null || !nm.trim()) return
+  const area = await promptBox('新项目建筑面积 (㎡)：', p.建筑面积 || '', '克隆并按面积缩放', '确定')
+  if (area == null) return
+  const np = store.cloneScaledProject(p.id, { 项目名称: nm.trim(), 建筑面积: parseFloat(area) || 0, scaleBy: 'area' })
+  await store.saveAll()
+  store.toast(`已克隆为「${np.项目名称}」（点按面积比缩放，请核对）`)
+  store.curProjId = np.id
+  store.curView = 'detail'
+}
+
 onMounted(() => layout.setActions([
   { label: '看板', icon: 'list', cls: 'ghost', onClick: board },
+  { label: '模板起盘', icon: 'zap', cls: 'ghost', onClick: bootstrapProject },
   { label: '新建项目', icon: 'plus', cls: 'primary', onClick: newProject }
 ]))
 watch(() => store.curTab, () => { if (store.curTab !== 'projects') layout.setActions([]) })
@@ -141,9 +159,11 @@ watch(() => store.curTab, () => { if (store.curTab !== 'projects') layout.setAct
         <div class="pfoot">
           <span>{{ p.设计阶段 || '-' }}</span>
           <span>预计结束 {{ p.预计结束日期 || '-' }}</span>
-          <button class="btn btn-icon btn-sm" title="复制项目" style="margin-left:auto" @click="copyProject($event, p.id)">
-            <VIcon name="copy" :size="15" />
-          </button>
+          <span style="margin-left:auto;display:flex;gap:4px">
+            <button class="btn btn-icon btn-sm" title="克隆并按面积缩放" @click="cloneScaled($event, p)">
+              <VIcon name="copy" :size="15" />
+            </button>
+          </span>
         </div>
         <div class="prog">
           <div class="prog-bar"><div class="prog-fill" :style="{ width: progressOf(p) + '%', background: progColor(p) }"></div></div>

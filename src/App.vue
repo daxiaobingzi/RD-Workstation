@@ -1,6 +1,6 @@
 <script setup>
 // 应用外壳：侧边栏（项目轨道 + 资料库抽屉）+ 顶栏 + 内容区 + 弹窗/Toast 宿主
-import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from './store'
 import { layout } from './composables/layout'
@@ -9,6 +9,7 @@ import VIcon from './components/ui/VIcon.vue'
 import ThemeSwitch from './components/layout/ThemeSwitch.vue'
 import DialogHost from './components/ui/DialogHost.vue'
 import ToastHost from './components/ui/ToastHost.vue'
+import CommandPalette from './components/CommandPalette.vue'
 import TodayPanel from './components/TodayPanel.vue'
 import ProjectsView from './views/ProjectsView.vue'
 import DatabaseView from './views/DatabaseView.vue'
@@ -17,6 +18,7 @@ import SettingsView from './views/SettingsView.vue'
 
 const store = useAppStore()
 const { curTab, ready, loading, online, syncText, curView, projects, curProjId } = storeToRefs(store)
+const paletteOpen = ref(false)
 
 const NAV = [
   ['projects', 'folder', '项目轨道'],
@@ -61,9 +63,8 @@ function openProject (id) {
   store.curProjId = id
   store.curSub = null
 }
-function openSearch () {
-  store.curTab = 'search'
-  setTimeout(() => { const el = document.querySelector('.g-search-input'); if (el) el.focus() }, 60)
+function togglePalette (v) {
+  paletteOpen.value = v === undefined ? !paletteOpen.value : v
 }
 
 function onKeydown (e) {
@@ -75,8 +76,7 @@ function onKeydown (e) {
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
     e.preventDefault()
-    if (curTab.value !== 'search') switchTab('search')
-    setTimeout(() => { const el = document.querySelector('.g-search-input'); if (el) el.focus() }, 60)
+    togglePalette(true)
   }
 }
 
@@ -102,8 +102,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <button v-for="n in NAV" :key="n[0]" class="nav-item" :class="{ active: curTab === n[0] }" @click="switchTab(n[0])">
           <VIcon :name="n[1]" /><span>{{ n[2] }}</span>
         </button>
-        <button class="nav-item" :class="{ active: curTab === 'search' }" title="全局搜索 ⌘K" @click="openSearch">
-          <VIcon name="search" /><span>搜索 <kbd class="kbd">⌘K</kbd></span>
+        <button class="nav-item" title="命令面板 ⌘K" @click="togglePalette(true)">
+          <VIcon name="search" /><span>命令 <kbd class="kbd">⌘K</kbd></span>
         </button>
         <div v-if="recentProjects.length" class="rail-projects">
           <div class="rail-label">最近项目</div>
@@ -147,9 +147,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <button v-for="n in NAV" :key="n[0]" class="nav-item" :class="{ active: curTab === n[0] }" @click="switchTab(n[0])">
         <VIcon :name="n[1]" /><span>{{ n[2] }}</span>
       </button>
+      <button class="nav-item" :class="{ active: curTab === 'search' }" @click="togglePalette(true)">
+        <VIcon name="search" /><span>命令</span>
+      </button>
     </nav>
 
     <DialogHost />
     <ToastHost />
+    <CommandPalette v-if="paletteOpen" @close="togglePalette(false)" />
   </div>
 </template>

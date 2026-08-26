@@ -36,17 +36,17 @@ export function seedTemplates () {
       id: 'tpl1', name: '办公楼-标准弱电模板', 建筑类型: '办公楼/写字楼', subsystems: [
         {
           name: '视频监控系统', devices: [
-            { name: '网络摄像机(枪式)', spec: '200万像素', unit: '台', category: '前端设备', quota: [{ name: '六类网线', spec: 'CAT6', unit: 'm', per: 20, cat: '管材线缆' }, { name: '电源线', spec: 'RVV2*1.0', unit: 'm', per: 15, cat: '管材线缆' }, { name: 'PVC线管', spec: 'DN20', unit: 'm', per: 15, cat: '管材线缆' }, { name: '摄像机支架', spec: '壁装', unit: '套', per: 1, cat: '辅材' }], ratio: { type: 'point' } },
+            { name: '网络摄像机(枪式)', spec: '200万像素', unit: '台', category: '前端设备', auto: { method: 'area', per: 400 }, quota: [{ name: '六类网线', spec: 'CAT6', unit: 'm', per: 20, cat: '管材线缆' }, { name: '电源线', spec: 'RVV2*1.0', unit: 'm', per: 15, cat: '管材线缆' }, { name: 'PVC线管', spec: 'DN20', unit: 'm', per: 15, cat: '管材线缆' }, { name: '摄像机支架', spec: '壁装', unit: '套', per: 1, cat: '辅材' }], ratio: { type: 'point' } },
             { name: 'NVR', spec: '16路', unit: '台', category: '后端设备', quota: [], ratio: { type: 'ratio', per: 16, target: '*' } }]
         },
         {
           name: '门禁管理系统', devices: [
-            { name: '读卡器', spec: 'IC/ID', unit: '台', category: '前端设备', quota: [{ name: '六类网线', spec: 'CAT6', unit: 'm', per: 10, cat: '管材线缆' }, { name: '门禁电源线', spec: 'RVV2*1.5', unit: 'm', per: 10, cat: '管材线缆' }], ratio: { type: 'point' } },
+            { name: '读卡器', spec: 'IC/ID', unit: '台', category: '前端设备', auto: { method: 'room', per: 2 }, quota: [{ name: '六类网线', spec: 'CAT6', unit: 'm', per: 10, cat: '管材线缆' }, { name: '门禁电源线', spec: 'RVV2*1.5', unit: 'm', per: 10, cat: '管材线缆' }], ratio: { type: 'point' } },
             { name: '门禁控制器', spec: '单门', unit: '台', category: '后端设备', quota: [], ratio: { type: 'ratio', per: 2, target: '*' } }]
         },
         {
           name: '综合布线系统', devices: [
-            { name: '信息面板', spec: '双口', unit: '套', category: '前端设备', quota: [{ name: '六类网线', spec: 'CAT6', unit: 'm', per: 35, cat: '管材线缆' }, { name: 'PVC线管', spec: 'DN20', unit: 'm', per: 35, cat: '管材线缆' }], ratio: { type: 'point' } }]
+            { name: '信息面板', spec: '双口', unit: '套', category: '前端设备', auto: { method: 'area', per: 12 }, quota: [{ name: '六类网线', spec: 'CAT6', unit: 'm', per: 35, cat: '管材线缆' }, { name: 'PVC线管', spec: 'DN20', unit: 'm', per: 35, cat: '管材线缆' }], ratio: { type: 'point' } }]
         }
       ]
     }
@@ -126,5 +126,37 @@ export function seedAllSettings () {
   s.buildingTypes = seedBuildingTypes()
   s.subCategories = seedSubCategories()
   s.templates = seedTemplates()
+  s.designQuotas = seedQuotas()
   return s
+}
+
+/** 默认设计定额（供旧数据环境补齐） */
+export function seedQuotas () {
+  return [
+    { id: 'dq_area_cam', subsystem: '视频监控系统', deviceId: 'dv1', method: 'area', per: 400, buildingType: '全部业态', min: 4, max: 0 },
+    { id: 'dq_area_dome', subsystem: '视频监控系统', deviceId: 'dv2', method: 'area', per: 800, buildingType: '全部业态', min: 2, max: 0 },
+    { id: 'dq_area_reader', subsystem: '门禁管理系统', deviceId: 'dv10', method: 'area', per: 2000, buildingType: '全部业态', min: 2, max: 0 },
+    { id: 'dq_area_info', subsystem: '综合布线系统', deviceId: 'dv6', method: 'area', per: 12, buildingType: '全部业态', min: 8, max: 0 },
+    { id: 'dq_floor_cam', subsystem: '视频监控系统', deviceId: 'dv3', method: 'floor', per: 0.25, buildingType: '全部业态', min: 0, max: 0 },
+    { id: 'dq_room_broad', subsystem: '公共广播系统', deviceId: 'dv18', method: 'room', per: 2, buildingType: '全部业态', min: 0, max: 0 }
+  ]
+}
+
+/** 幂等补齐：给旧模板里缺 auto 密度字段的设备，从同名种子模板合并 auto */
+export function patchTemplatesAuto (templates, seedTpl = seedTemplates()) {
+  const seedBy = {}
+  seedTpl.forEach(t => { seedBy[t.name + '||' + (t.建筑类型 || '')] = t })
+  ;(templates || []).forEach(t => {
+    // 优先级：同名且建筑类型一致；否则只有同名
+    let seed = seedBy[t.name + '||' + (t.建筑类型 || '')] || (seedTpl.find(x => x.name === t.name) || null)
+    if (!seed) return
+    ;(t.subsystems || []).forEach(s => {
+      const seedSub = seed.subsystems.find(x => x.name === s.name)
+      if (!seedSub) return
+      ;(s.devices || []).forEach(d => {
+        const sd = seedSub.devices.find(x => x.name === d.name)
+        if (sd && sd.auto && !d.auto) d.auto = JSON.parse(JSON.stringify(sd.auto))
+      })
+    })
+  })
 }
