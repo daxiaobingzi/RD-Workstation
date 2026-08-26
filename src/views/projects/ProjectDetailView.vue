@@ -9,7 +9,9 @@ import { openDialog, confirmBox, promptBox } from '../../composables/ui'
 import VIcon from '../../components/ui/VIcon.vue'
 import ProjectFormDialog from '../../components/dialogs/ProjectFormDialog.vue'
 import PointFormDialog from '../../components/dialogs/PointFormDialog.vue'
-import PointBatchDialog from '../../components/dialogs/PointBatchDialog.vue'
+import PointBatchAddDialog from '../../components/dialogs/PointBatchAddDialog.vue'
+import PointCsvDialog from '../../components/dialogs/PointCsvDialog.vue'
+import AutoQtyDialog from '../../components/dialogs/AutoQtyDialog.vue'
 import BillHistoryDialog from '../../components/dialogs/BillHistoryDialog.vue'
 import SystemChainCard from '../../components/SystemChainCard.vue'
 import SelectionPanel from '../../components/SelectionPanel.vue'
@@ -212,7 +214,35 @@ function openPointForm (pt) {
   openDialog(PointFormDialog, { project: p.value, point: pt, sub: sub.value })
 }
 function addPoint () { openPointForm(null) }
-function openBatch () { openDialog(PointBatchDialog, { project: p.value, sub: sub.value }) }
+
+// 勾选式批量选择（点位行）
+const selPts = ref(new Set())
+const allPtsChecked = computed(() => subPointRows.value.length > 0 && subPointRows.value.every(x => selPts.value.has(x.id)))
+function togglePt (id) { const s = new Set(selPts.value); s.has(id) ? s.delete(id) : s.add(id); selPts.value = s }
+function toggleAllPt () { selPts.value = allPtsChecked.value ? new Set() : new Set(subPointRows.value.map(x => x.id)) }
+function clearSelPt () { selPts.value = new Set() }
+watch(sub, () => clearSelPt())
+
+// 批量添加：一次勾选多台设备直接写入点表
+function openBatchAdd () { openDialog(PointBatchAddDialog, { project: p.value, sub: sub.value }) }
+// 智能推算：独立入口（按定额/配比自动算数量，供参考勾选应用）
+function openAuto () { openDialog(AutoQtyDialog, { project: p.value, sub: sub.value }) }
+// CSV 导入/导出：独立入口
+function openCsv () { openDialog(PointCsvDialog, { project: p.value, sub: sub.value }) }
+
+// 批量删除：勾选/全选点位行
+async function batchDelPts () {
+  if (!selPts.value.size) { store.toast('请先勾选要删除的点位行'); return }
+  const list = subPointRows.value.filter(x => selPts.value.has(x.id))
+  const total = list.reduce((a, x) => a + (Number(x.数量) || 0), 0)
+  const ok = await confirmBox(`确定删除选中的 ${list.length} 行点位（合计数量 ${total}）？\n对应设备的数量将被移出点表，清单推算随之变化。`, '批量删除点表行')
+  if (!ok) return
+  list.forEach(x => store.deletePoint(x.id))
+  selPts.value = new Set()
+  await store.saveAll()
+  store.toast(`已删除 ${list.length} 行点位`)
+}
+
 async function delPoint (id) {
   const pt = points.value.find(x => x.id === id)
   if (!pt) return
@@ -274,11 +304,14 @@ onBeforeUnmount(() => layout.setActions([]))
       </button>
     </div>
 
-    <!-- ③ 操作行：添加点位 + 批量操作 -->
+    <!-- ③ 操作行：添加点位 + 批量添加/智能推算/CSV（独立入口） -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn btn-primary btn-sm" @click="addPoint"><VIcon name="plus" />添加点位</button>
-      <button class="btn btn-ghost btn-sm" @click="openBatch"><VIcon name="list" />批量操作</button>
-      <span class="hint" style="align-self:center">批量操作含：批量填数量 / 智能推算 / 批量增减 / CSV 导入导出</span>
+      <button class="btn btn-ghost btn-sm" @click="openBatchAdd"><VIcon name="list" />批量添加/更新</button>
+      <button class="btn btn-ghost btn-sm" @click="openAuto"><VIcon name="zap" />智能推算</button>
+      <button class="btn btn-ghost btn-sm" @click="openCsv"><VIcon name="ul" />导入CSV</button>
+      <button class="btn btn-ghost btn-sm" @click="openCsv"><VIcon name="dl" />导出CSV</button>
+      <span class="hint" style="align-self:center">批量添加：一次勾选多台设备直接写入点表；批量删除：勾选或全选点位行</span>
     </div>
 
     <!-- ③ 系统卡 · 推导链 -->
@@ -289,15 +322,24 @@ onBeforeUnmount(() => layout.setActions([]))
       @add-point="addPoint"
     />
 
-    <!-- ③.5 点位明细表（行内编辑/删除） -->
+    <!-- ③.5 点位明细表（勾选式批量删除 + 行内编辑） -->
     <div class="card">
       <div class="card-title">
-        点位明细 · {{ sub }} <span class="sub">{{ subPointRows.length }} 行 · 直接改数量/备注，行内可删</span>
+        <span>点位明细 · {{ sub }} <span class="sub">{{ subPointRows.length }} 行 · 勾选行可批量删除，行内可编辑</span></span>
+        <span v-if="selPts.size" style="display:flex;gap:6px;align-items:center">
+          <span class="badge amber">已选 {{ selPts.size }} 行</span>
+          <button class="btn btn-danger btn-sm" @click="batchDelPts"><VIcon name="trash" />批量删除</button>
+          <button class="btn btn-ghost btn-sm" @click="clearSelPt">取消选择</button>
+        </span>
       </div>
       <div v-if="subPointRows.length" class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>设备类型</th><th>数量</th><th>备注</th><th style="width:96px">操作</th></tr></thead>
+        <thead><tr>
+          <th style="width:34px"><input type="checkbox" :checked="allPtsChecked" @change="toggleAllPt" title="全选本系统点位" /></th>
+          <th>设备类型</th><th>数量</th><th>备注</th><th style="width:96px">操作</th>
+        </tr></thead>
         <tbody>
-          <tr v-for="x in subPointRows" :key="x.id">
+          <tr v-for="x in subPointRows" :key="x.id" :class="{ 'row-sel': selPts.has(x.id) }">
+            <td><input type="checkbox" :checked="selPts.has(x.id)" @change="togglePt(x.id)" /></td>
             <td><b>{{ x.设备类型 }}</b><div v-if="store.resolveDevice(store.devices, x.子系统, x.设备类型, x['设备ID'])?.spec" class="src">{{ store.resolveDevice(store.devices, x.子系统, x.设备类型, x['设备ID']).spec }}</div></td>
             <td><b>{{ x.数量 }}</b></td>
             <td class="src">{{ x.备注 || '' }}</td>
@@ -310,7 +352,7 @@ onBeforeUnmount(() => layout.setActions([]))
           </tr>
         </tbody>
       </table></div>
-      <div v-else class="hint" style="padding:12px 0">暂无点位，点上方「添加点位」或「批量操作」录入。</div>
+      <div v-else class="hint" style="padding:12px 0">暂无点位，可点上方「添加点位」逐个录入，或「批量添加/更新」一次勾选多台设备写入。</div>
     </div>
 
     <!-- ③.5 选型面板（折叠） -->
@@ -363,3 +405,8 @@ onBeforeUnmount(() => layout.setActions([]))
     </div>
   </div>
 </template>
+
+<style scoped>
+.row-sel { background: var(--primary-l); }
+.row-sel:hover { background: var(--primary-l); }
+</style>
