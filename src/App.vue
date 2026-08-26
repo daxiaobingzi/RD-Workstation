@@ -1,5 +1,5 @@
 <script setup>
-// 应用外壳：侧边栏 + 顶栏 + 内容区 + 弹窗/Toast 宿主
+// 应用外壳：侧边栏（项目轨道 + 资料库抽屉）+ 顶栏 + 内容区 + 弹窗/Toast 宿主
 import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from './store'
@@ -16,14 +16,16 @@ import SearchView from './views/SearchView.vue'
 import SettingsView from './views/SettingsView.vue'
 
 const store = useAppStore()
-const { curTab, ready, loading, online, syncText, curView } = storeToRefs(store)
+const { curTab, ready, loading, online, syncText, curView, projects, curProjId } = storeToRefs(store)
 
 const NAV = [
-  ['projects', 'folder', '项目管理'],
-  ['database', 'db', '数据库'],
-  ['search', 'search', '搜索'],
+  ['projects', 'folder', '项目轨道'],
+  ['database', 'db', '资料库'],
   ['settings', 'set', '系统配置']
 ]
+
+// 最近项目快捷轨道（侧栏）
+const recentProjects = computed(() => projects.value.slice(-6).reverse())
 
 const viewMap = {
   projects: ProjectsView,
@@ -33,6 +35,7 @@ const viewMap = {
 }
 const currentView = computed(() => viewMap[curTab.value] || ProjectsView)
 const pageTitle = computed(() => {
+  if (curTab.value === 'search') return '全局搜索'
   if (curTab.value !== 'projects') {
     const m = NAV.find(n => n[0] === curTab.value)
     return m ? m[2] : ''
@@ -40,9 +43,9 @@ const pageTitle = computed(() => {
   if (curView.value === 'board') return '项目看板'
   if (curView.value === 'detail' || curView.value === 'bill') {
     const p = store.projectById(store.curProjId)
-    return p ? p.项目名称 : '项目管理'
+    return p ? p.项目名称 : '项目轨道'
   }
-  return '项目管理'
+  return '项目轨道'
 })
 
 function switchTab (t) {
@@ -50,6 +53,17 @@ function switchTab (t) {
   store.curView = 'list'
   store.curProjId = null
   store.curSub = null
+}
+
+function openProject (id) {
+  store.curTab = 'projects'
+  store.curView = 'detail'
+  store.curProjId = id
+  store.curSub = null
+}
+function openSearch () {
+  store.curTab = 'search'
+  setTimeout(() => { const el = document.querySelector('.g-search-input'); if (el) el.focus() }, 60)
 }
 
 function onKeydown (e) {
@@ -88,6 +102,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <button v-for="n in NAV" :key="n[0]" class="nav-item" :class="{ active: curTab === n[0] }" @click="switchTab(n[0])">
           <VIcon :name="n[1]" /><span>{{ n[2] }}</span>
         </button>
+        <button class="nav-item" :class="{ active: curTab === 'search' }" title="全局搜索 ⌘K" @click="openSearch">
+          <VIcon name="search" /><span>搜索 <kbd class="kbd">⌘K</kbd></span>
+        </button>
+        <div v-if="recentProjects.length" class="rail-projects">
+          <div class="rail-label">最近项目</div>
+          <button v-for="rp in recentProjects" :key="rp.id" class="rail-project" :class="{ active: curTab === 'projects' && curProjId === rp.id }" @click="openProject(rp.id)">
+            <span class="rp-dot" :class="{ done: rp.状态 === '已完成' || rp.状态 === '已归档' }"></span>
+            <span class="rp-name">{{ rp.项目名称 }}</span>
+          </button>
+        </div>
       </nav>
       <div class="side-foot">
         <div class="sync-state">

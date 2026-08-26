@@ -107,6 +107,169 @@ export function getProjectSelection (meta, p, deviceId) {
   return (m && m[deviceId]) || null
 }
 
+// ===== 推导链引擎（承载能力可自定义） =====
+// 每个后端/承载类设备声明"承接谁 + 每台承载多少 + 冗余/取整"，由引擎按依赖顺序
+// 从"前端点位合计"开始逐环推导，形成整条链条：前端 → 传输 → 存储 → 固定件。
+// 兼容旧 ratio 字段：ratio {type:'ratio',per,target} ≈ chain {mode:'carry',capacity:per,source}
+//                ratio {type:'fixed',qty}     ≈ chain {mode:'fixed',caps:qty}
+
+/** 归一化设备链配置（幂等，兼容旧 ratio） */
+export function ensureDeviceChain (d) {
+  if (!d.chain) {
+    // 从旧 ratio 迁移
+    const r = d.ratio
+    if (r && r.type === 'ratio') {
+      d.chain = { mode: 'carry', capacity: Number(r.per) || 1, source: r.targetDeviceId || 'front', factor: 1, reserve: 0, round: 'ceil' }
+    } else if (r && r.type === 'fixed') {
+      d.chain = { mode: 'fixed', capacity: Number(r.qty) || 1 }
+    } else {
+      d.chain = null
+    }
+  }
+  const c = d.chain
+  if (c) {
+    c.mode = c.mode || 'carry'
+    c.capacity = Math.max(1, Number(c.capacity) || 1)
+    c.factor = c.factor == null || c.factor === '' ? 1 : Number(c.factor) || 1
+    c.reserve = Number(c.reserve) || 0
+    c.round = c.round || 'ceil'
+    c.source = c.source || 'front'
+  }
+  return c
+}
+
+/** 链上公式文本（供系统卡片展示推导依据） */
+export function chainFormulaText (d, base, qty) {
+  const c = ensureDeviceChain(d)
+  if (!c) return '未配置'
+  if (c.mode === 'fixed') return '固定 ' + qty
+  if (c.mode === 'mul') {
+    let s = base + ' × ' + c.capacity
+    if (c.factor !== 1) s += ' × ' + c.factor
+    return s
+  }
+  let s = (c.round === 'floor' ? '↓' : '↑') + '(' + base + ' ÷ ' + c.capacity
+  if (c.factor !== 1) s += ' × ' + c.factor
+  s += ')'
+  if (c.reserve) s += ' + ' + c.reserve
+  return s + ' = ' + qty
+}
+
+/** 链上承载关系展示（如 "承接 前端合计"） */
+export function chainSourceLabel (devices, d) {
+  const c = ensureDeviceChain(d)
+  if (!c || c.mode === 'fixed') return ''
+  if (c.mode === 'mul') return '每台 × 承接'
+  if (c.source === 'front') return '承接 前端合计'
+  const src = devices.find(x => x.id === c.source)
+  return src ? '承接 ' + src.name : '承接 ?'
+}
+
+/**
+ * 推导链：子系统内全部设备，按依赖顺序生成 👉 [{ device, qty, base, formula, sourceLabel }]
+ * - 前端设备数量 = 点表合计（手填）
+ * - 后端设备按 chain 逐环推导（承载 = 上取整(承接量 ÷ 承载能力 × 系数) + 预留）
+ * - 未配置 chain 的后端设备返回 qty=null（不参与自动推算）
+ */
+export function deriveChain (devices, points, p, sub) {
+  const devs = devices.filter(d => d.subsystem === sub && d.status !== '归档')
+  // 前端合计（按设备聚合）
+  const frontQty = {}
+  points.filter(x => x.项目ID === p.id && x.子系统 === sub).forEach(x => {
+    const dv = resolveDevice(devices, sub, x.设备类型, x['设备ID'])
+    if (!dv || dv.category !== '前端设备') return
+    frontQty[dv.id] = (frontQty[dv.id] || 0) + (Number(x.数量) || 0)
+  })
+  const frontTotal = Object.values(frontQty).reduce((a, b) => a + b, 0)
+  const qtyById = {}
+  const order = []
+  const visited = {}
+  const pend = new Set(devs.filter(d => d.category !== '前端设备').map(d => d.id))
+
+  // 轮询解析：优先解析依赖已就绪的设备；无依赖者后解析（可承接任意）
+  let guard = 0
+  while (pend.size && guard++ < 50) {
+    let progressed = false
+    pend.forEach(id => {
+      const d = devs.find(x => x.id === id)
+      if (!d) { pend.delete(id); return }
+      const c = ensureDeviceChain(d)
+      const needId = c && c.source && c.source !== 'front' ? c.source : null
+      if (needId) {
+        if (visited[needId]) {
+          if (!visited[id]) { order.push(id); visited[id] = true }
+          pend.delete(id); progressed = true
+        }
+        return
+      }
+      if (!visited[id]) { order.push(id); visited[id] = true }
+      pend.delete(id); progressed = true
+    })
+    if (!progressed) { // 剩余循环依赖，兜底按顺序收录
+      pend.forEach(id => { if (!visited[id]) { order.push(id); visited[id] = true } })
+      pend.clear()
+    }
+  }
+
+  const rows = []
+  devs.forEach(d => {
+    if (d.category === '前端设备') {
+      const q = frontQty[d.id] || 0
+      qtyById[d.id] = q
+      rows.push({ device: d, qty: q, base: q, formula: q ? '点表手填' : '未填', sourceLabel: '点位' })
+      return
+    }
+    const c = ensureDeviceChain(d)
+    if (!c) { rows.push({ device: d, qty: null, base: 0, formula: '未配置', sourceLabel: '' }); return }
+    if (c.mode === 'fixed') {
+      const q = c.capacity
+      qtyById[d.id] = q
+      rows.push({ device: d, qty: q, base: q, formula: '固定 ' + q, sourceLabel: '' })
+      return
+    }
+    let base = 0
+    let lbl = ''
+    if (c.source === 'front' || !c.source) {
+      base = frontTotal
+      lbl = '承接 前端合计'
+    } else {
+      base = qtyById[c.source] || 0
+      const src = devs.find(x => x.id === c.source)
+      lbl = src ? '承接 ' + src.name : '承接 ?'
+    }
+    let q = 0
+    if (c.mode === 'mul') {
+      q = Math.round(base * c.capacity * (c.factor || 1))
+    } else {
+      let raw = base / c.capacity * (c.factor || 1)
+      q = c.round === 'floor' ? Math.floor(raw) : Math.ceil(raw)
+      q += c.reserve
+    }
+    q = Math.max(0, q)
+    qtyById[d.id] = q
+    rows.push({ device: d, qty: q, base, formula: chainFormulaText(d, base, q), sourceLabel: lbl })
+  })
+
+  // 按解析顺序排序（前端在前，后端按依赖）
+  const idxOf = {}
+  rows.forEach((r, i) => { idxOf[r.device.id] = i })
+  rows.sort((a, b) => {
+    const ac = ensureDeviceChain(a.device)
+    const bc = ensureDeviceChain(b.device)
+    if ((a.device.category === '前端设备') !== (b.device.category === '前端设备')) {
+      return a.device.category === '前端设备' ? -1 : 1
+    }
+    return (idxOf[a.device.id] || 0) - (idxOf[b.device.id] || 0)
+  })
+  return { rows, frontTotal }
+}
+
+/** 判灯设备是否对当前子系统"承载链条"有贡献（有 chain 或为前端） */
+export function isChainDevice (d) {
+  if (d.category === '前端设备') return true
+  return !!(d.chain && d.chain.mode)
+}
+
 // ---------- 清单生成 ----------
 /** 由项目点位 + 设备字典 + 定额/材料 + 选型价格，生成施工清单行 */
 export function computeBill (store, p) {

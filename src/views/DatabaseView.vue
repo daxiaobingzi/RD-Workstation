@@ -8,12 +8,14 @@ import { openDialog, confirmBox } from '../composables/ui'
 import { tierName } from '../db/format'
 import VIcon from '../components/ui/VIcon.vue'
 import DeviceFormDialog from '../components/dialogs/DeviceFormDialog.vue'
+import PriceWorkbench from '../components/PriceWorkbench.vue'
 
 const store = useAppStore()
 const layout = useLayout()
 const { settings, devices, devBrands, devSort, points } = storeToRefs(store)
 
 const dbSub = ref(store.curSub && settings.value.subsystems.some(s => s.name === store.curSub) ? store.curSub : (settings.value.subsystems[0]?.name || '视频监控系统'))
+const mode = ref('dict') // dict | price
 
 const devs = computed(() => {
   const list = devices.value.filter(d => d.subsystem === dbSub.value)
@@ -75,8 +77,12 @@ async function del (id) {
 
 const addDev = () => openDialog(DeviceFormDialog, { subsystem: dbSub.value })
 
-onMounted(() => layout.setActions([{ label: '添加设备', icon: 'plus', cls: 'primary', onClick: addDev }]))
+onMounted(() => layout.setActions(mode.value === 'price' ? [] : [{ label: '添加设备', icon: 'plus', cls: 'primary', onClick: addDev }]))
 onBeforeUnmount(() => layout.setActions([]))
+function switchMode (m) {
+  mode.value = m
+  layout.setActions(m === 'price' ? [] : [{ label: '添加设备', icon: 'plus', cls: 'primary', onClick: addDev }])
+}
 </script>
 
 <template>
@@ -87,8 +93,17 @@ onBeforeUnmount(() => layout.setActions([]))
       </button>
     </div>
 
-    <div class="card">
-      <div class="card-title">{{ dbSub }} 设备类型 <span class="sub">设备名称/规格/单位/类别/配比规则/品牌价格</span></div>
+    <div class="tabs" style="margin-bottom:10px">
+      <button class="tab" :class="{ active: mode === 'dict' }" @click="switchMode('dict')">设备字典</button>
+      <button class="tab" :class="{ active: mode === 'price' }" @click="switchMode('price')">价格工作台</button>
+    </div>
+
+    <template v-if="mode === 'price'">
+      <PriceWorkbench :db-sub="dbSub" />
+    </template>
+    <template v-else>
+      <div class="card">
+        <div class="card-title">{{ dbSub }} 设备类型 <span class="sub">设备名称/规格/单位/类别/配比规则/品牌价格</span></div>
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr><th style="width:34px"></th><th>设备名称</th><th>规格型号</th><th>单位</th><th>类别</th><th>品牌/价格</th><th>配比规则</th><th style="width:168px">操作</th></tr></thead>
         <tbody>
@@ -113,6 +128,7 @@ onBeforeUnmount(() => layout.setActions([]))
           </tr>
         </tbody>
       </table></div>
-    </div>
+      </div>
+    </template>
   </div>
 </template>

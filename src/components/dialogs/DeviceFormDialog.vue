@@ -26,7 +26,18 @@ const f = reactive({
 })
 
 const quotaRows = ref(JSON.parse(JSON.stringify(props.device?.quota || [])))
-const ratio = reactive({ type: props.device?.ratio?.type || 'point', per: props.device?.ratio?.per || 1, qty: props.device?.ratio?.qty || 1, target: props.device?.ratio?.target || '*' })
+
+// 链式承载配置（承载能力可自定义：承接谁 + 每台承载多少 + 系数/预留/取整）
+const srcChain = props.device?.chain || props.device?.ratio || null
+const chain = reactive({
+  enabled: !!props.device?.chain || !!props.device?.ratio,
+  mode: srcChain?.mode || srcChain?.type || 'carry', // carry | mul | fixed
+  capacity: srcChain ? (Number(srcChain.capacity) || (srcChain.type === 'ratio' ? Number(srcChain.per) || 1 : srcChain.type === 'fixed' ? Number(srcChain.qty) || 1 : 1)) : 1,
+  source: srcChain?.source || (srcChain?.targetDeviceId) || (srcChain?.target && srcChain.target !== '*' ? srcChain.target : 'front') || 'front',
+  factor: srcChain?.factor != null ? Number(srcChain.factor) : 1,
+  reserve: srcChain?.reserve != null ? Number(srcChain.reserve) : 0,
+  round: srcChain?.round || 'ceil'
+})
 
 const frontDevs = computed(() => devices.value.filter(d => d.category === '前端设备' && d.id !== props.device?.id))
 const brands = ref(JSON.parse(JSON.stringify(store.devBrands[props.device?.id] || [])))
@@ -42,19 +53,30 @@ async function save () {
 
   const quota = quotaRows.value.map(m => ({ name: m.name.trim(), spec: m.spec.trim(), unit: m.unit.trim() || 'm', per: parseFloat(m.per) || 0, cat: m.cat })).filter(m => m.name)
 
-  let ratioObj = null
-  if (ratio.type === 'point') ratioObj = { type: 'point' }
-  else if (ratio.type === 'ratio') ratioObj = { type: 'ratio', per: parseInt(ratio.per) || 1, target: ratio.target || '*' }
-  else if (ratio.type === 'fixed') ratioObj = { type: 'fixed', qty: parseInt(ratio.qty) || 1 }
+  let chainObj = null
+  if (chain.enabled && f.category !== '前端设备') {
+    if (chain.mode === 'fixed') {
+      chainObj = { mode: 'fixed', capacity: Math.max(1, parseInt(chain.capacity) || 1) }
+    } else {
+      chainObj = {
+        mode: chain.mode === 'mul' ? 'mul' : 'carry',
+        capacity: Math.max(1, parseInt(chain.capacity) || 1),
+        source: chain.source || 'front',
+        factor: parseFloat(chain.factor) || 1,
+        reserve: parseInt(chain.reserve) || 0,
+        round: chain.round || 'ceil'
+      }
+    }
+  }
 
   let d = props.device
   if (isNew.value) {
-    d = store.addDevice({ subsystem: sub, name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, ratio: ratioObj })
+    d = store.addDevice({ subsystem: sub, name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? (devices.value.find(x => x.id === chainObj.source)?.name || '*') : '*' } : null })
     // 新设备排到该子系统末尾
     const tail = devices.value.filter(x => x.subsystem === sub).length
     store.devSort[d.id] = tail
   } else {
-    store.saveDevice(d, { name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, ratio: ratioObj })
+    store.saveDevice(d, { name, spec: f.spec.trim(), unit: f.unit.trim() || '台', category: f.category, quota, chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? (devices.value.find(x => x.id === chainObj.source)?.name || '*') : '*' } : null })
   }
 
   // 品牌价格
@@ -132,29 +154,57 @@ async function save () {
 
     <div class="form-grid" style="margin-top:10px">
       <div class="fitem" style="grid-column:1/-1">
-        <label>配比规则 <span style="color:var(--text3);font-weight:400">决定施工清单中该设备/材料的数量来源</span></label>
-        <select v-model="ratio.type">
-          <option value="point">前端设备 / 点数（手填，不推算）</option>
-          <option value="ratio">按配比 1/N</option>
-          <option value="fixed">固定值</option>
-        </select>
+        <label>
+          <span style="display:inline-flex;align-items:center;gap:8px">
+            <input type="checkbox" v-model="chain.enabled" :disabled="f.category === '前端设备'">
+            链式承载规则 <span style="color:var(--text3);font-weight:400">将本设备挂入推导链（前端设备按 点表 手填，无需配置）</span>
+          </span>
+        </label>
       </div>
-      <div v-if="ratio.type === 'ratio'" class="fitem">
-        <label>每 N 台前端设备配 1 台</label>
-        <input v-model.number="ratio.per" type="number" min="1" step="1">
-      </div>
-      <div v-if="ratio.type === 'fixed'" class="fitem">
-        <label>固定数量</label>
-        <input v-model.number="ratio.qty" type="number" min="1" step="1">
-      </div>
-      <div v-if="ratio.type === 'ratio'" class="fitem">
-        <label>关联前端设备</label>
-        <select v-model="ratio.target" style="width:100%">
-          <option value="*">全部前端设备（*）</option>
-          <option v-for="d in frontDevs" :key="d.id" :value="d.id">{{ d.name }}{{ d.spec ? '（' + d.spec + '）' : '' }}</option>
-        </select>
-        <div class="hint">选择参与计算的前端设备；「全部」= 所有前端设备按数量合计</div>
-      </div>
+
+      <template v-if="chain.enabled && f.category !== '前端设备'">
+        <div class="fitem">
+          <label>推导方式</label>
+          <select v-model="chain.mode">
+            <option value="carry">按承载能力（1 台承接 N 台）</option>
+            <option value="mul">按倍数（承接量 × N）</option>
+            <option value="fixed">固定值</option>
+          </select>
+        </div>
+        <div v-if="chain.mode === 'carry' || chain.mode === 'mul'" class="fitem">
+          <label>{{ chain.mode === 'carry' ? '每台承载能力' : '倍数 N' }}</label>
+          <input v-model.number="chain.capacity" type="number" min="1" step="1">
+        </div>
+        <div v-if="chain.mode === 'fixed'" class="fitem">
+          <label>固定数量</label>
+          <input v-model.number="chain.capacity" type="number" min="1" step="1">
+        </div>
+        <div v-if="chain.mode === 'carry' || chain.mode === 'mul'" class="fitem">
+          <label>承接对象</label>
+          <select v-model="chain.source" style="width:100%">
+            <option value="front">前端设备合计</option>
+            <option v-for="d in frontDevs" :key="d.id" :value="d.id">{{ d.name }}{{ d.spec ? '（' + d.spec + '）' : '' }}</option>
+          </select>
+        </div>
+        <div v-if="chain.mode === 'carry'" class="fitem">
+          <label>冗余系数（不填=1）</label>
+          <input v-model.number="chain.factor" type="number" min="1" step="0.05">
+        </div>
+        <div v-if="chain.mode === 'carry'" class="fitem">
+          <label>预留备件（台）</label>
+          <input v-model.number="chain.reserve" type="number" min="0" step="1">
+        </div>
+        <div v-if="chain.mode === 'carry'" class="fitem">
+          <label>取整方式</label>
+          <select v-model="chain.round">
+            <option value="ceil">向上取整（推荐）</option>
+            <option value="floor">向下取整</option>
+          </select>
+        </div>
+        <div class="fitem" style="grid-column:1/-1">
+          <div class="hint">示例：64 路前端相机的系统，POE 交换机每台承载 20 路 → 向上取整(64 ÷ 20 × 1.05) + 1 备 = 5 台。</div>
+        </div>
+      </template>
     </div>
 
     <template #foot>

@@ -9,7 +9,8 @@ import {
   ensureDesignQuotas, quotaRuleFor, calcRuleQty, ratioSuggestedQty, subTotalFront,
   suggestQtyForDevice, resolveDevice, selectionOf, getProjectSelection, computeBill,
   diffBill, normalizeBillList, newBillEntry, calcProgress,
-  buildBillRows, rowsToCSV, rowsToTSV
+  buildBillRows, rowsToCSV, rowsToTSV,
+  ensureDeviceChain, deriveChain, chainFormulaText, chainSourceLabel, isChainDevice
 } from '../db/calc'
 import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText } from '../db/export'
 
@@ -119,6 +120,7 @@ export const useAppStore = defineStore('app', () => {
 
     normalizeLegacyRatioTargets()
     normalizePointDeviceIds()
+    devices.value.forEach(d => ensureDeviceChain(d))
     meta.value = ensureBusinessMeta(meta.value)
     ready.value = true
     loading.value = false
@@ -161,6 +163,46 @@ export const useAppStore = defineStore('app', () => {
     toastVisible.value = true
     clearTimeout(toastTimer)
     toastTimer = setTimeout(() => { toastVisible.value = false }, 2600)
+  }
+
+  // ---------- 推导链 ----------
+  /** 当前子系统的推导链（前端 → 传输/存储/固定 全部设备，含每环数量与公式） */
+  function chainOf (pid, sub) {
+    return deriveChain(devices.value, points.value, projectById(pid), sub)
+  }
+  /** 链上某设备单价（项目选型 > 默认型号） */
+  function chainUnitPrice (pid, device) {
+    if (!device) return null
+    const sel = selectionOf({ meta: meta.value, devBrands: devBrands.value }, projectById(pid), device)
+    return sel && sel.unitPrice != null ? Number(sel.unitPrice) : null
+  }
+  /** 将推导数量写入点表（后端设备行若无则新建，有则覆盖数量） */
+  function applyChainToPoints (pid, sub, rows, onlyIds) {
+    const picked = rows.filter(r => !onlyIds || onlyIds.indexOf(r.device.id) >= 0)
+    let changed = 0
+    let added = 0
+    picked.forEach(r => {
+      if (r.device.category === '前端设备' || r.qty == null) return
+      const pt = points.value.find(x => x.项目ID === pid && (x['设备ID'] === r.device.id || (x.子系统 === sub && x.设备类型 === r.device.name)))
+      if (pt) {
+        if (Number(pt.数量) !== Number(r.qty)) {
+          pt.数量 = Number(r.qty)
+          pt.备注 = (pt.备注 || '').replace(/；?链式推导[^；]*/g, '').replace(/^；|；$/g, '') + (pt.备注 ? '；' : '') + '链式推导'
+          pt.updatedAt = nowISO()
+          changed++
+        }
+      } else {
+        points.value.push({ id: uid('dq'), 项目ID: pid, 子系统: sub, 点位名称: '', 安装位置: '', 设备类型: r.device.name, 设备ID: r.device.id, 数量: Number(r.qty), 备注: '链式推导', updatedAt: nowISO() })
+        added++
+      }
+    })
+    return { changed, added }
+  }
+  /** 就地改承载参数并落库（卡片编辑调用） */
+  async function saveChain (device, chain) {
+    if (!device) return
+    device.chain = chain || null
+    await saveAll()
   }
 
   // ---------- 项目 CRUD ----------
@@ -706,6 +748,8 @@ export const useAppStore = defineStore('app', () => {
     prepareBill, commitBill, setBillViewCache, computeBill,
     // 设备
     addDevice, saveDevice, deleteDevice, copyDevice, moveDevice, resolveDevice,
+    // 推导链
+    chainOf, chainUnitPrice, applyChainToPoints, saveChain, deriveChain, ensureDeviceChain, isChainDevice,
     // 设置
     addSubsystem, saveSubsystem, deleteSubsystem,
     addBrand, saveBrand, deleteBrand,
