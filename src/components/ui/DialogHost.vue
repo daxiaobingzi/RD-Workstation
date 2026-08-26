@@ -1,11 +1,8 @@
 <script setup>
-// 动态弹窗宿主：渲染 dialogStack 栈顶组件
+// 动态弹窗宿主：渲染 dialogStack 全部层级（上层浮于下层之上）
 import { onMounted, onBeforeUnmount } from 'vue'
 import { dialogStack, closeDialog } from '../../composables/ui'
 
-function onMask (e) {
-  if (e.target === e.currentTarget) closeDialog()
-}
 function onKey (e) {
   if (e.key === 'Escape' && dialogStack.value.length) closeDialog()
 }
@@ -15,8 +12,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div v-if="dialogStack.length" class="mask" @click.self="onMask">
-      <div class="dialog" v-for="d in dialogStack.slice(-1)" :key="d.component?.__file || 'd'">
+    <!-- 渲染弹窗栈全部层级：上层弹窗浮于下层之上，关闭后下层原样保留（避免"重开"割裂感） -->
+    <div v-for="(d, di) in dialogStack" :key="di + (d.component?.__file || 'd')" class="mask" :style="{ zIndex: 100 + di }" @click.self="closeDialog">
+      <div class="dialog">
         <component :is="d.component" v-bind="d.props" @close="closeDialog" />
       </div>
     </div>

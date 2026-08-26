@@ -323,7 +323,8 @@ export function computeBill (store, p) {
       name: r.设备类型, spec: d ? d.spec : '', unit: d ? d.unit : '台', qty: x.qty,
       src: '设备点表', brand: z ? z.brand : '', model: z ? z.model : '', tier: z ? tierName(z.tier) : '',
       param: z ? z.param : '', unitPrice: z ? z.unitPrice : null,
-      source: z ? (z.source || '项目选型') : '未匹配'
+      source: z ? (z.source || '项目选型') : '未匹配',
+      dictMissing: !d // 点表有数量但设备不在字典中（被删/改名），清单降级为无价前端设备
     })
   })
   Object.keys(backQty).forEach(k => {
@@ -334,7 +335,8 @@ export function computeBill (store, p) {
       name: r.设备类型, spec: d ? d.spec : '', unit: d ? d.unit : '台', qty: x.qty,
       src: '设备点表', brand: z ? z.brand : '', model: z ? z.model : '', tier: z ? tierName(z.tier) : '',
       param: z ? z.param : '', unitPrice: z ? z.unitPrice : null,
-      source: z ? (z.source || '项目选型') : '未匹配'
+      source: z ? (z.source || '项目选型') : '未匹配',
+      dictMissing: !d
     })
   })
   const mp = store.settings.materialPrices || {}

@@ -170,6 +170,7 @@ async function removeStyle (s) {
           <button :class="{ on: edTab === 'light' }" @click="edTab = 'light'; livePreview()">亮色主题</button>
           <button :class="{ on: edTab === 'dark' }" @click="edTab = 'dark'; livePreview()">暗色主题</button>
         </div>
+        <div class="ed-note">「亮色 / 暗色主题」指该风格在两种系统主题下的配色变量；系统的白天 / 黑夜 / 随系统切换仍由右上角主题按钮控制。</div>
         <div class="frow" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
           <div v-for="([k, lbl]) in CUSTOM_VAR_KEYS" :key="k" class="fitem">
             <label :style="k === '--wallpaper' ? 'color:var(--text3)' : ''">{{ lbl }}</label>
@@ -221,11 +222,13 @@ async function removeStyle (s) {
 .s-tags .tag.act:hover{color:var(--primary)}
 .s-tags .tag.act.del{color:var(--red-ink);border-color:var(--red-line);background:var(--red-l)}
 .s-tags .tag.act.del:hover{filter:brightness(1.1)}
-/* 卡片右上操作钮（编辑/删除） */
+/* 卡片右上操作钮（编辑/删除）：悬停或键盘聚焦时显示 */
 .s-ops{position:absolute;right:8px;bottom:8px;display:flex;gap:4px;opacity:0;transition:opacity .15s}
-.ss-card:hover .s-ops{opacity:1}
+.ss-card:hover .s-ops,
+.ss-card:focus-within .s-ops{opacity:1}
 .s-ops .op{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text3);background:var(--glass-2);border:1px solid var(--line)}
 .s-ops .op:hover{color:var(--primary);border-color:var(--primary)}
+.s-ops .op:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
 .s-ops .op.del:hover{color:var(--red-ink);border-color:var(--red-line);background:var(--red-l)}
 .ss-hd{font-size:12px;color:var(--text3);margin-bottom:6px;font-weight:600}
 .ss-restore{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;font-size:12.5px;color:var(--text2);
@@ -243,4 +246,5 @@ async function removeStyle (s) {
 .ed-tabs button{flex:1;padding:8px 0;border-radius:999px;font-size:13px;font-weight:600;color:var(--text2);
   background:var(--glass-1);border:1px solid var(--line);cursor:pointer;transition:all .18s}
 .ed-tabs button.on{background:var(--tab-active-bg);color:#fff;border-color:transparent;box-shadow:var(--tab-active-shadow)}
+.ed-note{font-size:11.5px;color:var(--text3);margin:-6px 0 12px;line-height:1.5;padding:8px 12px;border-radius:10px;background:var(--glass-1);border:1px dashed var(--line)}
 </style>

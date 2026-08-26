@@ -187,7 +187,7 @@ onBeforeUnmount(() => layout.setActions([]))
             <tbody>
               <template v-for="(r, i) in g.rows.filter(r => r.cat === c)" :key="i">
                 <tr v-if="c === '前端设备' || c === '后端设备'" :class="{ 'row-miss': (r.unitPrice == null || r.unitPrice === '') }">
-                  <td><b>{{ r.name }}</b></td>
+                  <td><b>{{ r.name }}</b><span v-if="r.dictMissing" class="badge red" style="margin-left:6px;font-size:10.5px" title="设备字典中已不存在该设备，按无价前端设备计入清单">字典缺失</span></td>
                   <td class="src">{{ r.spec || '-' }}</td>
                   <td><span v-if="r.brand" class="bp">{{ r.brand }}</span><b v-else class="miss">未选型</b></td>
                   <td class="src">{{ r.model || '-' }}</td>

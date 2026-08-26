@@ -129,7 +129,8 @@ export const useAppStore = defineStore('app', () => {
     meta.value = ensureBusinessMeta(meta.value)
     ready.value = true
     loading.value = false
-    persistMeta()
+    // 归一化结果落库，确保下次启动前其他依赖（如模板克隆、点表回填）读到已回填状态
+    await persistAll()
   }
 
   function lsGet (k, fb) {
@@ -244,6 +245,8 @@ export const useAppStore = defineStore('app', () => {
         const cur = Number(v.unitPrice)
         let nv = cur * (1 + pctN / 100)
         if (roundTo > 0) nv = Math.round(nv / roundTo) * roundTo
+        // 防归零/负价：极端下调后保留不小于 1 的有效单价
+        if (!(nv > 0)) nv = 1
         v.unitPrice = nv
         varCount++
         touched = true
@@ -283,11 +286,13 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function updateProject (p, data) {
+    // 阶段流转日志：先记录旧阶段再赋值，避免比较恒等导致日志永不触发
+    const from = p.设计阶段
     Object.assign(p, data)
-    if (data && data.设计阶段 && data.设计阶段 !== p.设计阶段 && p.设计阶段) {
+    if (from && data && data.设计阶段 && data.设计阶段 !== from) {
       const log = meta.value.stageLog || (meta.value.stageLog = {})
       log[p.id] = log[p.id] || []
-      log[p.id].push({ at: nowISO(), from: p.设计阶段, to: data.设计阶段 })
+      log[p.id].push({ at: nowISO(), from, to: data.设计阶段 })
     }
     return p
   }
@@ -302,6 +307,7 @@ export const useAppStore = defineStore('app', () => {
     if (meta.value.stageLog && meta.value.stageLog[id]) delete meta.value.stageLog[id]
     if (meta.value.billAt && meta.value.billAt[id]) delete meta.value.billAt[id]
     if (meta.value.projectSelections && meta.value.projectSelections[id]) delete meta.value.projectSelections[id]
+    if (meta.value.projectSchemes && meta.value.projectSchemes[id]) delete meta.value.projectSchemes[id]
     if (meta.value.projectBudget && meta.value.projectBudget[id]) delete meta.value.projectBudget[id]
   }
 
@@ -639,7 +645,9 @@ export const useAppStore = defineStore('app', () => {
       const parts = line.split(/[,，\t]/).map(s => s.trim())
       const type = parts[0]
       if (!type) return
-      rows.push({ 设备类型: type, 数量: parseInt(parts[1]) || 1, 备注: parts[2] || '' })
+      const qRaw = parseInt(parts[1], 10)
+      // 保留用户填写的 0（表示清除数量），仅当数量缺失/非法时默认 1
+      rows.push({ 设备类型: type, 数量: Number.isNaN(qRaw) ? 1 : qRaw, 备注: parts[2] || '' })
     })
     return rows
   }
@@ -653,6 +661,8 @@ export const useAppStore = defineStore('app', () => {
     let upd = 0
     let skip = 0
     rows.forEach(r => {
+      // 数量 <= 0 的行视为无效（CSV 里显式填 0 也跳过，避免污染点表）
+      if (!(Number(r.数量) > 0)) { skip++; return }
       const dv = resolveDevice(devices.value, sub, r.设备类型, null)
       if (!dv) { skip++; return }
       const cur = has[r.设备类型]
@@ -765,20 +775,60 @@ export const useAppStore = defineStore('app', () => {
     return d
   }
   function saveDevice (d, data) { Object.assign(d, data); return d }
+  /** 清理某设备被删后的全部悬空引用（品牌价格/选型/方案/推导链/排序/点表设备ID） */
+  function purgeDeviceRefs (id, name, sub) {
+    // 1) 品牌型号价格
+    if (devBrands.value[id]) delete devBrands.value[id]
+    // 2) 排序
+    if (devSort.value[id]) delete devSort.value[id]
+    // 3) 项目选型 / 方案（按设备 id 清除）
+    Object.keys(meta.value.projectSelections || {}).forEach(pid => {
+      const sel = meta.value.projectSelections[pid] || {}
+      if (sel[id]) delete sel[id]
+    })
+    Object.keys(meta.value.projectSchemes || {}).forEach(pid => {
+      const sch = meta.value.projectSchemes[pid] || {}
+      if (sch[id]) delete sch[id]
+    })
+    // 4) 其他设备推导链 / 配比规则中的引用（多来源、单来源）
+    devices.value.forEach(d => {
+      if (d.id === id) return
+      if (d.chain) {
+        if (d.chain.source === id) { d.chain.source = 'front'; d.chain.sources = (d.chain.sources || []).filter(s => s !== id) }
+        if (d.chain.sources) d.chain.sources = d.chain.sources.filter(s => s !== id)
+      }
+      if (d.ratio && d.ratio.targetDeviceId === id) d.ratio.targetDeviceId = null
+    })
+    // 5) 点表：清除指向已删设备的 设备ID（保留设备类型字符串，供按名称解析回退）
+    points.value.forEach(x => { if (x['设备ID'] === id) delete x['设备ID'] })
+  }
   function deleteDevice (id) {
     const d = devById(id)
     if (!d) return
-    // 保留点表里的历史值（设备类型字符串）
+    const { name, subsystem } = d
+    // 保留点表里的历史值（设备类型字符串），但清理所有悬空引用
+    purgeDeviceRefs(id, name, subsystem)
     devices.value = devices.value.filter(x => x.id !== id)
   }
   function copyDevice (id) {
     const d = devById(id)
     if (!d) return null
-    const nd = { ...d, id: uid('dv'), name: d.name + '（副本）', quota: JSON.parse(JSON.stringify(d.quota || [])), ratio: d.ratio ? { ...d.ratio } : null }
+    // chain/ratio 均深拷贝，避免副本与源共享引用造成串扰
+    const nd = {
+      ...d,
+      id: uid('dv'),
+      name: d.name + '（副本）',
+      quota: JSON.parse(JSON.stringify(d.quota || [])),
+      ratio: d.ratio ? JSON.parse(JSON.stringify(d.ratio)) : null,
+      chain: d.chain ? JSON.parse(JSON.stringify(d.chain)) : null
+    }
     devices.value.push(nd)
     return nd
   }
   function moveDevice (id, dir) {
+    // 在当前子系统、非归档的设备视图定位相邻位，并交换全量数组中的实际位置。
+    // 两个 splice(替换) 每次使用真实下标 indexOf 定位，数组长度保持不变，
+    // 因此无论视图中是否夹带归档设备，交换都自校正为正确结果。
     const list = devicesOfSub(devById(id)?.subsystem)
     const idx = list.findIndex(d => d.id === id)
     const target = idx + dir
@@ -787,6 +837,7 @@ export const useAppStore = defineStore('app', () => {
     const b = list[target]
     const ia = devices.value.indexOf(a)
     const ib = devices.value.indexOf(b)
+    if (ia < 0 || ib < 0 || ia === ib) return
     devices.value.splice(ia, 1, b)
     devices.value.splice(ib, 1, a)
   }
@@ -794,7 +845,15 @@ export const useAppStore = defineStore('app', () => {
   // ---------- 子系统 / 品牌 / 分类（设置） ----------
   function addSubsystem (s) { const x = { id: uid('sp'), fields: [], ...s }; settings.value.subsystems.push(x); return x }
   function saveSubsystem (s, data) { Object.assign(s, data); return s }
-  function deleteSubsystem (id) { settings.value.subsystems = settings.value.subsystems.filter(s => s.id !== id) }
+  function deleteSubsystem (id) {
+    const x = settings.value.subsystems.find(s => s.id === id)
+    if (!x) return
+    settings.value.subsystems = settings.value.subsystems.filter(s => s.id !== id)
+    // 级联清理：该子系统的设备、设备价格、点表行
+    devices.value.filter(d => d.subsystem === x.name).forEach(d => { purgeDeviceRefs(d.id, d.name, d.subsystem) })
+    devices.value = devices.value.filter(d => d.subsystem !== x.name)
+    points.value = points.value.filter(pt => pt.子系统 !== x.name)
+  }
 
   function addBrand (b) { settings.value.brands = settings.value.brands || []; const x = { id: uid('br'), status: '启用', ...b }; settings.value.brands.push(x); return x }
   function saveBrand (b, data) { Object.assign(b, data); return b }
@@ -825,18 +884,26 @@ export const useAppStore = defineStore('app', () => {
   // 全局参数
   function setGlobalParam (k, v) { settings.value.globalParams[k] = v }
 
-  // 演示数据
+  // 演示数据：清空/恢复时同步清理设备字典与设备级数据（保留子系统/参数等基础配置）
   function clearDemo () {
     projects.value = []
     points.value = []
     notes.value = {}
     bills.value = {}
+    devices.value = []
+    devSort.value = {}
+    devBrands.value = {}
+    meta.value = ensureBusinessMeta({ ...meta.value, stageLog: {}, billAt: {}, projectSelections: {}, projectSchemes: {}, projectBudget: {} })
   }
   function seedDemo () {
     projects.value = seedProjects()
     points.value = seedPoints()
+    devices.value = seedDevices()
     notes.value = seedNotes()
     bills.value = {}
+    devSort.value = {}
+    devBrands.value = {}
+    meta.value = seedMeta()
   }
 
   // ---------- 备份 ----------
@@ -865,6 +932,8 @@ export const useAppStore = defineStore('app', () => {
       normalizeLegacyRatioTargets()
       normalizePointDeviceIds()
       ensureDesignQuotas(settings.value)
+      patchTemplatesAuto(settings.value.templates)
+      devices.value.forEach(d => ensureDeviceChain(d))
       await saveAll()
       return true
     } catch (e) {
