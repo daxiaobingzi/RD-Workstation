@@ -94,6 +94,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 input,select,textarea{font-family:inherit;font-size:16px;color:var(--text);border:1px solid var(--input-border);border-radius:10px;padding:10px 12px;background:var(--input-bg);width:100%;outline:none;transition:border .15s,box-shadow .15s,background-color .3s,color .3s}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--input-focus-ring)}
 select option{background:var(--bg2);color:var(--text)}
+input[type="checkbox"]{width:auto;min-width:auto;padding:0;accent-color:var(--accent)}
 ::placeholder{color:var(--text3)}
 textarea{resize:vertical;min-height:72px}
 label{font-size:13px;color:var(--text2);display:block;margin-bottom:5px;font-weight:500}
@@ -251,6 +252,15 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
 .bill-sum .cell{background:var(--glass-1);border:1px solid var(--line);border-radius:10px;padding:10px 14px;text-align:center}
 .bill-sum .cell b{display:block;font-size:20px;color:var(--accent);font-family:var(--mono);font-variant-numeric:tabular-nums}
 .bill-sum .cell span{font-size:12px;color:var(--text2)}
+.bill-sum .cell .src{font-size:10.5px;color:var(--text3);display:block}
+.quota-head{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 20px;margin-bottom:16px;border-top:3px solid var(--primary)}
+.qh-title{font-size:19px;font-weight:700;letter-spacing:2px;color:var(--strong-text);margin-bottom:8px}
+.qh-sub{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
+.qh-meta{font-size:12.5px;color:var(--text2);margin-top:2px}
+.bill-full th{white-space:nowrap}
+.bill-full .bp{font-weight:600;color:var(--blue-ink)}
+.bill-full .miss{color:var(--red);font-size:12px}
+.bill-full .row-miss td{background:var(--red-l);color:var(--red-ink)}
 .src{font-size:11px;color:var(--text3)}
 
 /* 设置 */

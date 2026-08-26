@@ -9,12 +9,14 @@ import { openDialog, confirmBox, promptBox } from '../../composables/ui'
 import VIcon from '../../components/ui/VIcon.vue'
 import ProjectFormDialog from '../../components/dialogs/ProjectFormDialog.vue'
 import PointFormDialog from '../../components/dialogs/PointFormDialog.vue'
+import PointBatchDialog from '../../components/dialogs/PointBatchDialog.vue'
 import BillHistoryDialog from '../../components/dialogs/BillHistoryDialog.vue'
 import SystemChainCard from '../../components/SystemChainCard.vue'
+import SelectionPanel from '../../components/SelectionPanel.vue'
 
 const store = useAppStore()
 const layout = useLayout()
-const { points, bills, meta, settings, notes } = storeToRefs(store)
+const { points, bills, meta, settings, notes, devices } = storeToRefs(store)
 
 const p = computed(() => store.projectById(store.curProjId))
 const sub = computed(() => {
@@ -48,6 +50,18 @@ const changedAfterBill = computed(() => {
 })
 
 const noteText = ref('')
+const showSel = ref(true)
+
+// 当前子系统未完成选型的设备数（有型号但用户未显式指定，且设备被本项目使用）
+const selMissing = computed(() => {
+  const sel = meta.value.projectSelections?.[p.value?.id] || {}
+  return devices.value.filter(d => d.subsystem === sub.value && d.status !== '归档').filter(d => {
+    const variants = (store.devBrands[d.id] || []).filter(v => v.brand)
+    if (!variants.length) return true
+    const cur = sel[d.id]
+    return !cur || !cur.brand
+  }).length
+})
 watch(sub, () => {
   noteText.value = (p.value && notes.value[p.value.id + '|' + sub.value]) || ''
 }, { immediate: true })
@@ -198,6 +212,16 @@ function openPointForm (pt) {
   openDialog(PointFormDialog, { project: p.value, point: pt, sub: sub.value })
 }
 function addPoint () { openPointForm(null) }
+function openBatch () { openDialog(PointBatchDialog, { project: p.value, sub: sub.value }) }
+async function delPoint (id) {
+  const pt = points.value.find(x => x.id === id)
+  if (!pt) return
+  const ok = await confirmBox(`确定删除「${pt.设备类型}」这行点位（数量 ${pt.数量}）？`, '删除点表行')
+  if (!ok) return
+  store.deletePoint(id)
+  await store.saveAll()
+}
+const subPointRows = computed(() => (p.value ? points.value.filter(x => x.项目ID === p.value.id && x.子系统 === sub.value) : []))
 
 async function saveNote () {
   store.saveNote(p.value.id, sub.value, noteText.value)
@@ -250,6 +274,13 @@ onBeforeUnmount(() => layout.setActions([]))
       </button>
     </div>
 
+    <!-- ③ 操作行：添加点位 + 批量操作 -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-primary btn-sm" @click="addPoint"><VIcon name="plus" />添加点位</button>
+      <button class="btn btn-ghost btn-sm" @click="openBatch"><VIcon name="list" />批量操作</button>
+      <span class="hint" style="align-self:center">批量操作含：批量填数量 / 智能推算 / 批量增减 / CSV 导入导出</span>
+    </div>
+
     <!-- ③ 系统卡 · 推导链 -->
     <SystemChainCard
       :project="p"
@@ -257,6 +288,44 @@ onBeforeUnmount(() => layout.setActions([]))
       @go-bill="goBill"
       @add-point="addPoint"
     />
+
+    <!-- ③.5 点位明细表（行内编辑/删除） -->
+    <div class="card">
+      <div class="card-title">
+        点位明细 · {{ sub }} <span class="sub">{{ subPointRows.length }} 行 · 直接改数量/备注，行内可删</span>
+      </div>
+      <div v-if="subPointRows.length" class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>设备类型</th><th>数量</th><th>备注</th><th style="width:96px">操作</th></tr></thead>
+        <tbody>
+          <tr v-for="x in subPointRows" :key="x.id">
+            <td><b>{{ x.设备类型 }}</b><div v-if="store.resolveDevice(store.devices, x.子系统, x.设备类型, x['设备ID'])?.spec" class="src">{{ store.resolveDevice(store.devices, x.子系统, x.设备类型, x['设备ID']).spec }}</div></td>
+            <td><b>{{ x.数量 }}</b></td>
+            <td class="src">{{ x.备注 || '' }}</td>
+            <td>
+              <div class="op">
+                <button title="编辑" @click="openPointForm(x)"><VIcon name="edit" /></button>
+                <button class="del" title="删除" @click="delPoint(x.id)"><VIcon name="trash" /></button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+      <div v-else class="hint" style="padding:12px 0">暂无点位，点上方「添加点位」或「批量操作」录入。</div>
+    </div>
+
+    <!-- ③.5 选型面板（折叠） -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title" style="cursor:pointer;margin-bottom:0" @click="showSel = !showSel">
+        <span>选型面板 · {{ sub }} <span class="sub">品牌型号选择，决定清单与报价</span></span>
+        <span style="display:flex;gap:6px;align-items:center">
+          <span class="badge" :class="selMissing ? 'amber' : 'green'">{{ selMissing ? selMissing + ' 未定' : '已全部选型' }}</span>
+          <VIcon :name="showSel ? 'up' : 'down'" :size="15" style="color:var(--text3)" />
+        </span>
+      </div>
+      <template v-if="showSel">
+        <SelectionPanel :project="p" :sub="sub" />
+      </template>
+    </div>
 
     <!-- 变更影响 -->
     <div v-if="changedAfterBill" class="card" style="border-color:rgba(245,170,50,.45)">

@@ -54,7 +54,10 @@ const summary = computed(() => {
   const tax = gp.tax || 0
   const total = q.quote.total
   const finalAmt = Math.round(total * markup * (1 + tax / 100) * 100) / 100
-  return { quote: q.quote, markup, tax, total, finalAmt }
+  const labor = Number(settings.value.globalParams.laborRate) || 0
+  const laborAmt = labor > 0 ? Math.round(total * labor / 100 * 100) / 100 : 0
+  const grand = Math.round((total + laborAmt) * markup * (1 + tax / 100) * 100) / 100
+  return { quote: q.quote, markup, tax, total, finalAmt, laborAmt, grand }
 })
 
 const maxQ = computed(() => {
@@ -140,63 +143,82 @@ onBeforeUnmount(() => layout.setActions([]))
       该项目暂无施工清单，请确认已填写设备数量后，在项目页点击「生成施工清单」。
     </div>
     <template v-else>
+      <!-- 项目抬头 -->
+      <div class="quota-head">
+        <div class="qh-title">弱电智能化施工清单</div>
+        <div class="qh-sub">项目名称：{{ p.项目名称 }} · 编号：{{ p.项目编号 || '-' }}</div>
+        <div class="qh-meta">客户：{{ p.客户 || '-' }} · 建筑类型：{{ p.建筑类型 || '-' }} · 地址：{{ p.项目地址 || '-' }}</div>
+        <div class="qh-meta">设计阶段：{{ p.设计阶段 || '-' }} · 清单生成：{{ meta.billAt?.[p.id] ? String(meta.billAt[p.id]).replace('T', ' ').slice(0, 19) : '-' }} · 损耗率 {{ settings.globalParams.lossRate }}%</div>
+      </div>
+
       <!-- 汇总 -->
       <div class="card">
-        <div class="card-title">施工清单汇总 <span class="sub">{{ p.项目名称 }} · 损耗率 {{ settings.globalParams.lossRate }}% · 按系统分列</span></div>
-        <div class="bill-sum">
-          <div v-for="g in groups" :key="g.sub" class="cell">
-            <b>{{ g.rows.reduce((a, r) => a + (Number(r.qty) || 0), 0) }}</b><span>{{ g.sub }} {{ g.rows.length }} 项</span>
-          </div>
-        </div>
-        <div v-if="summary" class="bill-sum" style="margin-top:10px">
+        <div class="card-title">清单汇总 <span class="sub">按系统 · 设备/材料/合计</span></div>
+        <div v-if="summary" class="bill-sum">
           <div v-for="s in summary.quote.order" :key="s.sub" class="cell">
-            <b>{{ fmtNum(s.dev + s.mat) }}</b><span>{{ s.sub }} 小计(元)</span>
+            <b>{{ fmtNum(s.dev + s.mat) }}</b><span>{{ s.sub }} <span class="src">设备{{ fmtNum(s.dev) }} + 材料{{ fmtNum(s.mat) }}</span></span>
           </div>
           <div class="cell" style="border-left:2px solid var(--accent)">
-            <b>{{ fmtNum(summary.total) }}</b><span>总投资(元) · 设备 {{ fmtNum(summary.quote.devAmt) }} + 材料 {{ fmtNum(summary.quote.matAmt) }}{{ summary.total === 0 ? '（未配置价格）' : '' }}</span>
+            <b>{{ fmtNum(summary.total) }}</b><span>设备 + 材料合计 <span class="src">设备{{ fmtNum(summary.quote.devAmt) }} + 材料{{ fmtNum(summary.quote.matAmt) }}</span></span>
+          </div>
+          <div v-if="summary.laborAmt" class="cell">
+            <b>{{ fmtNum(summary.laborAmt) }}</b><span>人工（{{ settings.globalParams.laborRate || 0 }}%）</span>
           </div>
           <div class="cell" style="border-left:2px solid var(--accent)">
-            <b>{{ fmtNum(summary.finalAmt) }}</b><span>含税总价(元) · 调价×{{ summary.markup }}{{ summary.tax ? ' · 税率' + summary.tax + '%' : '' }}</span>
+            <b>{{ fmtNum(summary.grand) }}</b><span>含税总价<span v-if="summary.tax"> · 税{{ summary.tax }}%</span><span v-if="summary.markup !== 1"> · 调价×{{ summary.markup }}</span></span>
           </div>
-        </div>
-        <!-- 数量占比 -->
-        <div class="card-title" style="margin-top:10px">系统数量占比 <span class="sub">按清单数量占比</span></div>
-        <div v-for="g in groups" :key="'pct-' + g.sub" class="kv-row" style="margin:0">
-          <div class="k" style="min-width:130px">{{ g.sub }} <b>{{ g.rows.reduce((a, r) => a + (Number(r.qty) || 0), 0) }}</b></div>
-          <div style="flex:1"><div class="prog-bar" style="max-width:340px"><div class="prog-fill" :style="{ width: (maxQ ? Math.round(g.rows.reduce((a, r) => a + (Number(r.qty) || 0), 0) / maxQ * 100) : 0) + '%', background: '#6a5fc1' }"></div></div></div>
         </div>
       </div>
 
-      <!-- 每系统明细 -->
+      <!-- 每系统明细（报价式满字段） -->
       <div v-for="g in groups" :key="g.sub" class="card">
-        <div class="card-title">{{ g.sub }} <span class="sub">{{ g.rows.length }} 项 · 设备与材料明细</span></div>
-        <div class="bill-sum">
-          <div v-for="c in CATS" :key="c" class="cell">
-            <b>{{ g.rows.filter(r => r.cat === c).reduce((a, r) => a + (Number(r.qty) || 0), 0) }}</b><span>{{ c }} {{ g.rows.filter(r => r.cat === c).length }} 项</span>
-          </div>
-        </div>
+        <div class="card-title">{{ g.sub }} <span class="sub">{{ g.rows.length }} 项 · 品牌/型号/参数/单价/合价</span></div>
         <div v-for="c in CATS" :key="c" class="bill-cat">
           <div class="bill-cat-head">
             <span class="chip" :style="{ background: CAT_COLORS[c] }"></span>{{ c }}<span class="n">{{ g.rows.filter(r => r.cat === c).length }} 项</span>
           </div>
           <div v-if="!g.rows.filter(r => r.cat === c).length" class="hint" style="padding:6px 0 12px">无</div>
-          <div v-else class="tbl-wrap"><table class="tbl">
-            <thead><tr><th>材料名称</th><th>规格型号</th><th>单位</th><th>数量</th><th>推算来源</th></tr></thead>
-            <tbody>
-              <tr v-for="(r, i) in g.rows.filter(r => r.cat === c)" :key="i">
-                <td><b>{{ r.name }}</b></td>
-                <td>{{ r.spec || '-' }}</td>
-                <td>{{ r.unit }}</td>
-                <td><b>{{ r.qty }}</b></td>
-                <td class="src">{{ r.src }}</td>
+          <div v-else class="tbl-wrap"><table class="tbl bill-full">
+            <thead>
+              <tr v-if="c === '前端设备' || c === '后端设备'">
+                <th>材料名称</th><th>规格型号</th><th>品牌</th><th>型号</th><th>档次</th><th>参数</th><th>单位</th><th>数量</th><th>单价</th><th>合价</th><th>选型方式</th><th>推算来源</th>
               </tr>
+              <tr v-else>
+                <th>材料名称</th><th>规格型号</th><th>单位</th><th>数量</th><th>来源</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="(r, i) in g.rows.filter(r => r.cat === c)" :key="i">
+                <tr v-if="c === '前端设备' || c === '后端设备'" :class="{ 'row-miss': (r.unitPrice == null || r.unitPrice === '') }">
+                  <td><b>{{ r.name }}</b></td>
+                  <td class="src">{{ r.spec || '-' }}</td>
+                  <td><span v-if="r.brand" class="bp">{{ r.brand }}</span><b v-else class="miss">未选型</b></td>
+                  <td class="src">{{ r.model || '-' }}</td>
+                  <td><span v-if="r.tier" class="badge plain" style="font-size:11px">{{ r.tier }}</span></td>
+                  <td class="src" style="max-width:150px">{{ r.param || '-' }}</td>
+                  <td>{{ r.unit }}</td>
+                  <td><b>{{ r.qty }}</b></td>
+                  <td class="src"><template v-if="r.unitPrice != null">¥ {{ fmtNum(r.unitPrice) }}</template><b v-else class="miss">缺价</b></td>
+                  <td><b>{{ r.unitPrice != null ? '¥' + fmtNum(r.unitPrice * r.qty) : '—' }}</b></td>
+                  <td><span class="badge" :class="{ 'blue': r.source === '项目选型', 'gray': r.source === '默认型号' }" style="font-size:11px">{{ r.source || '未匹配' }}</span></td>
+                  <td class="src">{{ r.src }}</td>
+                </tr>
+                <tr v-else>
+                  <td><b>{{ r.name }}</b></td>
+                  <td class="src">{{ r.spec || '-' }}</td>
+                  <td>{{ r.unit }}</td>
+                  <td><b>{{ r.qty }}</b></td>
+                  <td class="src">{{ r.src }}</td>
+                </tr>
+              </template>
             </tbody>
           </table></div>
         </div>
       </div>
 
-      <!-- 底部操作 -->
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <!-- 备注与操作 -->
+      <div class="card" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:16px">
+        <span class="hint" style="margin-right:auto">生成的清单行已冻结，选型/价格变化后可重新生成</span>
         <button class="btn btn-ghost" @click="printPage"><VIcon name="file" />打印版</button>
         <button class="btn btn-ghost" @click="copyTable"><VIcon name="copy" />复制表格</button>
         <button class="btn btn-ghost" @click="exportCSV"><VIcon name="dl" />导出 CSV</button>

@@ -370,6 +370,55 @@ export const useAppStore = defineStore('app', () => {
     return meta.value.projectBudget[pid] || {}
   }
 
+  /** 批量增减点数量：ids 为空则作用于子系统全部点位；op = '+'|'-'|'*'，val 为数值 */
+  function bulkAdjustPoints (pid, sub, op, val) {
+    const n = Number(val) || 0
+    if (!n) return { changed: 0 }
+    let changed = 0
+    points.value.filter(x => x.项目ID === pid && x.子系统 === sub).forEach(x => {
+      const cur = Number(x.数量) || 0
+      let nxt = cur
+      if (op === '+') nxt = cur + n
+      else if (op === '-') nxt = Math.max(0, cur - n)
+      else if (op === '*') nxt = Math.round(cur * n)
+      if (nxt !== cur && nxt > 0) {
+        x.数量 = nxt
+        x.备注 = (x.备注 || '') + '；批量' + (op === '*' ? '×' + n : (op === '-' ? '-' + n : '+' + n))
+        x.updatedAt = nowISO()
+        changed++
+      } else if (nxt === 0 && cur !== 0) {
+        x.数量 = 0
+        x.updatedAt = nowISO()
+        changed++
+      }
+    })
+    return { changed }
+  }
+
+  // ---------- 项目选型 ----------
+  /** 指定某设备在当前项目的品牌型号（存 meta.projectSelections）；overrides 为 null 表示清除选型回默认 */
+  function setProjectSelection (pid, deviceId, sel) {
+    meta.value.projectSelections = meta.value.projectSelections || {}
+    const m = meta.value.projectSelections[pid] || (meta.value.projectSelections[pid] = {})
+    if (sel && sel.brand) m[deviceId] = { brand: sel.brand, model: sel.model || '', tier: sel.tier || '标准型', param: sel.param || '', unitPrice: Number(sel.unitPrice) || null, source: '人工指定' }
+    else delete m[deviceId]
+  }
+
+  /** 按配置档次批量选型：把该项目所有设备统一选到某档（tierName），无该档型号的设备跳过 */
+  function bulkSelectionByTier (pid, sub, tierName) {
+    let applied = 0
+    devices.value.filter(d => d.subsystem === sub && d.status !== '归档').forEach(d => {
+      const variants = devBrands.value[d.id] || []
+      const hit = variants.find(v => v.tier === tierName && v.brand) || variants[0]
+      if (!hit || !hit.brand) return
+      const cur = getProjectSelection(meta.value, projectById(pid), d.id)
+      if (cur && cur.brand === hit.brand && Number(cur.unitPrice) === Number(hit.unitPrice)) return
+      setProjectSelection(pid, d.id, { brand: hit.brand, model: hit.model, tier: hit.tier, param: hit.param, unitPrice: hit.unitPrice })
+      applied++
+    })
+    return applied
+  }
+
   // ---------- 模板 ----------
   /** 应用模板：生成设备字典（不重复）+ 点表骨架，幂等 */
   function applyTemplate (tpl, p) {
@@ -891,9 +940,10 @@ export const useAppStore = defineStore('app', () => {
     init, saveAll, toast,
     // 项目
     newProject, updateProject, deleteProject, copyProject, setProjectStatus,
-    setProjectBudget, projectBudget,
+    setProjectBudget, projectBudget, setProjectSelection, bulkSelectionByTier, selectionOf, getProjectSelection,
     // 模板
     applyTemplate, saveProjectAsTemplate, deleteTemplate, bootstrapFromTemplate, cloneScaledProject,
+    bulkAdjustPoints,
     // 点位
     addPoint, savePoint, deletePoint, buildBringOut, batchSavePoints,
     importPointsCSV, autoQtyImpact, applyAutoQty,

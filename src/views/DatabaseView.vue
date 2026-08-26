@@ -1,13 +1,15 @@
 <script setup>
 // 数据库 · 设备字典：子系统页签 + 设备列表（排序/编辑/复制/删除）
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../store'
 import { useLayout } from '../composables/layout'
 import { openDialog, confirmBox } from '../composables/ui'
-import { tierName } from '../db/format'
+import { rowsToCSV } from '../db/calc'
+import { buildCsvBlob, downloadBlob } from '../db/export'
 import VIcon from '../components/ui/VIcon.vue'
 import DeviceFormDialog from '../components/dialogs/DeviceFormDialog.vue'
+import DeviceBatchDialog from '../components/dialogs/DeviceBatchDialog.vue'
 import PriceWorkbench from '../components/PriceWorkbench.vue'
 import PriceGovernDialog from '../components/dialogs/PriceGovernDialog.vue'
 
@@ -17,6 +19,47 @@ const { settings, devices, devBrands, devSort, points } = storeToRefs(store)
 
 const dbSub = ref(store.curSub && settings.value.subsystems.some(s => s.name === store.curSub) ? store.curSub : (settings.value.subsystems[0]?.name || '视频监控系统'))
 const mode = ref('dict') // dict | price
+
+// ---------- 批量操作 ----------
+const sel = ref(new Set())
+const selList = computed(() => devices.value.filter(d => sel.value.has(d.id)))
+const allChecked = computed(() => devs.value.length > 0 && devs.value.every(d => sel.value.has(d.id)))
+watch([dbSub, mode], () => sel.value = new Set())
+function toggle (id) { const s = new Set(sel.value); s.has(id) ? s.delete(id) : s.add(id); sel.value = s }
+function toggleAll () { sel.value = allChecked.value ? new Set() : new Set(devs.value.map(d => d.id)) }
+function clearSel () { sel.value = new Set() }
+
+function openBatchAdd () { openDialog(DeviceBatchDialog, { subsystem: dbSub.value, selectedIds: [], tab: 'add' }) }
+function openBatchEdit () { if (!sel.value.size) { store.toast('请先勾选设备'); return } openDialog(DeviceBatchDialog, { subsystem: dbSub.value, selectedIds: [...sel.value], tab: 'edit' }) }
+
+async function batchDelete () {
+  const list = selList.value
+  if (!list.length) { store.toast('请先勾选设备'); return }
+  let refCount = 0
+  list.forEach(d => {
+    refCount += points.value.filter(x => x['设备ID'] === d.id || (!x['设备ID'] && x.子系统 === d.subsystem && x.设备类型 === d.name)).length
+  })
+  const ok = await confirmBox(
+    refCount
+      ? `所选 ${list.length} 台设备共被 ${refCount} 处项目点表引用，批量删除将导致涉及项目的清单推算失效。\n建议改为归档，或先清理引用。仍要删除？`
+      : `确定批量删除所选 ${list.length} 台设备？`,
+    '批量删除设备', true)
+  if (!ok) return
+  list.forEach(d => store.deleteDevice(d.id))
+  sel.value = new Set()
+  await store.saveAll()
+  store.toast(`已删除 ${list.length} 台设备`)
+}
+
+function exportSel () {
+  const list = selList.value.length ? selList.value : devs.value
+  const head = ['设备名称', '规格型号', '单位', '类别', '配比规则', '品牌型号价格']
+  const rows = [head].concat(list.map(d => {
+    return [d.name, d.spec || '', d.unit, d.category, ratioTxt(d), brandTxt(d).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')]
+  }))
+  downloadBlob(`设备字典-${dbSub.value}.csv`, buildCsvBlob(rowsToCSV(rows)))
+  store.toast(`已导出 ${list.length} 台设备`)
+}
 
 // 全库缺价统计（价格治理按钮角标）
 const missingN = computed(() => devices.value.filter(d => {
@@ -114,14 +157,27 @@ function switchMode (m) {
       <PriceWorkbench :db-sub="dbSub" />
     </template>
     <template v-else>
+      <div class="batch-bar">
+        <button class="btn btn-ghost btn-sm" @click="openBatchAdd"><VIcon name="plus" />批量添加</button>
+        <template v-if="sel.size">
+          <span class="sel-count"><b>{{ sel.size }}</b> 台已选</span>
+          <button class="btn btn-ghost btn-sm" @click="openBatchEdit"><VIcon name="edit" />批量修改</button>
+          <button class="btn btn-ghost btn-sm" @click="batchDelete"><VIcon name="trash" />批量删除</button>
+          <button class="btn btn-ghost btn-sm" @click="exportSel"><VIcon name="download" />导出CSV</button>
+          <button class="btn btn-ghost btn-sm" @click="clearSel">清除选择</button>
+        </template>
+        <span v-else class="hint">勾选设备后可批量修改 / 删除 / 导出；「批量添加」支持粘贴多行快速建库</span>
+      </div>
       <div class="card">
         <div class="card-title">{{ dbSub }} 设备类型 <span class="sub">设备名称/规格/单位/类别/配比规则/品牌价格</span></div>
       <div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th style="width:34px"></th><th>设备名称</th><th>规格型号</th><th>单位</th><th>类别</th><th>品牌/价格</th><th>配比规则</th><th style="width:168px">操作</th></tr></thead>
+        <thead><tr>
+          <th style="width:34px"><input type="checkbox" :checked="allChecked" @change="toggleAll" title="全选" /></th>
+          <th>设备名称</th><th>规格型号</th><th>单位</th><th>类别</th><th>品牌/价格</th><th>配比规则</th><th style="width:168px">操作</th></tr></thead>
         <tbody>
-          <tr v-if="!devs.length"><td colspan="8" style="text-align:center;color:var(--text3);padding:24px">该子系统暂无设备，点击「添加设备」录入。</td></tr>
+          <tr v-if="!devs.length"><td colspan="9" style="text-align:center;color:var(--text3);padding:24px">该子系统暂无设备，点击「添加设备」或「批量添加」录入。</td></tr>
           <tr v-for="(d, idx) in devs" :key="d.id">
-            <td><VIcon name="grip" :size="14" /></td>
+            <td><input type="checkbox" :checked="sel.has(d.id)" @change="toggle(d.id)" /></td>
             <td><b>{{ d.name }}</b></td>
             <td class="src">{{ d.spec || '-' }}</td>
             <td>{{ d.unit }}</td>
@@ -144,3 +200,9 @@ function switchMode (m) {
     </template>
   </div>
 </template>
+
+<style scoped>
+.batch-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.sel-count { font-size: 12.5px; color: var(--accent); background: var(--primary-l); padding: 3px 10px; border-radius: 999px; }
+.batch-bar input[type="checkbox"] { width: auto; margin: 0; accent-color: var(--accent); }
+</style>
