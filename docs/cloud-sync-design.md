@@ -46,11 +46,33 @@
 | 对象 | 说明 |
 |---|---|
 | `data/{key}.json` | 业务集合数据，**保持现有原始结构**（如 projects 为数组），读写路径兼容 |
-| `data/_versions.json` | 版本清单：`{ key: { ver, updatedAt, deviceId } }`，作为「修订表」，用于判断新旧 |
-| `data/_conflicts/{key}-{ts}.json` | 冲突留档：并发覆盖时保存败者副本，可追溯 |
-| 本地 IndexedDB | 同键保存「最后同步数据 + 已同步 ver + dirty 标记」 |
+| `data/_versions.json` | 云端版本清单（修订表）：`{ key: { ver, updatedAt, deviceId } }`，用于判断新旧 |
+| `data/_conflicts/{key}-{ts}.json` | 冲突留档：并发时保存败者副本，可追溯、可人工恢复 |
+| 本地 `_syncstate`（IndexedDB） | 本地同步状态：`{ key: { baseVer, updatedAt, dirty } }` |
+| 本地 `data/{key}`（IndexedDB） | 本地缓存数据（即「最后同步的云端数据」+ 未推送的本地编辑） |
 
 key 集合：`projects / points / devices / settings / meta / notes / bills / devSort / devBrands`（与现有 `SYNC_KEYS` 一致）。
+
+**版本对象字段语义**
+
+- `ver`：集合版本号，**单调递增整数**，仅当某设备成功写入云端后 bump（`云端当前 ver + 1`）。
+- `updatedAt`：该版本最后被修改的时间（ISO 字符串），冲突时作为新旧裁决依据。
+- `deviceId`：产生该版本的设备标识（本地生成、持久化于 localStorage），用于时间戳打平时的确定性决胜。
+- `baseVer`（本地状态）：本地缓存数据所对应的云端版本；`dirty=true` 表示本地缓存含有尚未推送的编辑。
+
+**冲突留档文件格式**（写入 `data/_conflicts/{key}-{ts}.json`）
+
+```json
+{
+  "key": "projects",
+  "createdAt": "2026-08-27T10:00:00.000Z",
+  "conflict": { "winner": "remote", "reason": "updatedAt 较新 / deviceId 决胜" },
+  "winner": { "ver": 12, "updatedAt": "2026-08-27T09:59:00.000Z", "deviceId": "phone-2" },
+  "loser":  { "ver": 11, "updatedAt": "2026-08-27T09:58:00.000Z", "deviceId": "pc-1", "data": [ ...败者数据... ] }
+}
+```
+
+> 留档是**败者的完整数据**（含其版本信息），不是合并结果——合并交给用户决策，保证「数据永不丢失」。
 
 ## 5. 同步机制
 
@@ -63,18 +85,140 @@ key 集合：`projects / points / devices / settings / meta / notes / bills / de
 | 切回前台 / 定时 | `visibilitychange` 回到前台 + 每 60s 轮询 → 拉最新并合并 |
 | 手动 | 设置页「立即同步」按钮 + 「最后同步时间」展示 |
 
-### 5.2 冲突策略（单用户简化版）
+### 5.2 本地同步状态模型
 
-| 场景 | 处理 |
-|---|---|
-| 云端较新、本地未 dirty | 云端覆盖本地缓存 |
-| 云端较新、本地 dirty | 取 `updatedAt` 较新者为准，败者备份到 `data/_conflicts/` 并提示 |
-| 本地 dirty、云端未变 | 推送本地（bump ver） |
-| 云端不可达 | 用本地缓存（P0 已实现），重连后自动对齐 |
+每台设备在本地维护两个关键状态：
 
-> 结论：**数据永不丢失**。极端并发以时间戳为准，败者永远留档可查。
+- `local data`（IndexedDB 同键）：**最后已知数据** = 最后同步的云端数据 + 可能存在的未推送本地编辑。
+- `_syncstate[key]`：`{ baseVer, updatedAt, dirty }`
+  - `baseVer`：本地数据对应的云端版本（若 dirty，指本地编辑之前的基础版本）。
+  - `updatedAt`：本地最后一次编辑时间（仅 dirty 时有意义）。
+  - `dirty`：本地是否有未推送的编辑。
 
-### 5.3 本地缓存策略
+### 5.3 冲突判定矩阵
+
+同步单个集合时，读取**云端版本清单** `_versions.json` 与**本地状态** `_syncstate`，按以下矩阵决策：
+
+| 云端 `ver` | 本地 `baseVer` | 本地 dirty | 判定 | 动作 |
+|---|---|---|---|---|
+| 无 | 无 | - | 初始态 | 无操作 |
+| 无 | 有 | 是 | 本地新建 | 推送本地（`ver = 1`） |
+| 无 | 有 | 否 | 仅本地缓存 | 无操作 |
+| 有 | 无 | - | 新设备 / 清缓存 | 拉取云端覆盖本地缓存 |
+| `> baseVer` | 有 | 否 | 云端更新 | 拉取云端覆盖本地缓存 |
+| `> baseVer` | 有 | **是** | **真冲突** | 见 5.4 冲突裁决 |
+| `<= baseVer` | 有 | 是 | 本地更新 | 推送本地（`ver = 云端 ver + 1`） |
+| `== baseVer` | 有 | 否 | 一致 | 无操作 |
+
+> 关键：**冲突只发生在同一集合同时被两设备修改**。PC 改 `projects`、手机改 `points` 是不同集合，互不覆盖，不会触发冲突。
+
+### 5.4 冲突裁决（核心逻辑）
+
+**裁决规则**：比较双方 `updatedAt`，较新者胜；**同一毫秒则用 `deviceId` 字典序决胜**——保证两台设备对同一冲突得出**完全相同且可复现**的结论。败者完整数据写入 `data/_conflicts/`，之后拉取/推送胜者，最后提示用户可人工查看/恢复。
+
+**核心同步函数（示意实现，落地时并入 `ossSync.js`）**
+
+```js
+const DEVICE_ID = (() => {
+  try {
+    let id = localStorage.getItem('wb_elv_device')
+    if (!id) { id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); localStorage.setItem('wb_elv_device', id) }
+    return id
+  } catch (e) { return 'dev-anon' }
+})()
+
+/**
+ * 时间裁决：主键 updatedAt，平局按 deviceId 字典序（大者胜），结果确定可复现
+ */
+function newerThan (a, b) {
+  const ta = new Date(a.updatedAt).getTime()
+  const tb = new Date(b.updatedAt).getTime()
+  if (ta !== tb) return ta > tb
+  if (a.deviceId === b.deviceId) return false
+  return a.deviceId > b.deviceId
+}
+
+/**
+ * 同步单个集合：拉取云端版本清单后逐集合决策（核心入口）
+ * @returns {{action:'none'|'pull'|'push', conflict?:boolean, winner?:string}}
+ */
+async function syncCollection (key, remoteManifest) {
+  const rv = remoteManifest[key] || null                     // 云端版本
+  const lv = (await loadLocalState())[key] || null           // 本地状态 {baseVer,updatedAt,dirty}
+
+  if (!rv && !lv) return { action: 'none' }                  // 两边都没有
+  if (!rv && lv.dirty) { await pushCollection(key, null); return { action: 'push' } } // 本地新建
+  if (!lv) { await pullCollection(key, rv); return { action: 'pull' } }               // 云端拉取
+
+  if (rv.ver > lv.baseVer) {                                 // 云端比本地基础新
+    if (lv.dirty) return await resolveConflict(key, rv, lv)  // 真冲突
+    await pullCollection(key, rv); return { action: 'pull' } // 云端覆盖缓存
+  }
+  if (lv.dirty) { await pushCollection(key, rv); return { action: 'push' } } // 推送本地
+  return { action: 'none' }                                  // 一致
+}
+
+/**
+ * 冲突裁决：较新者胜，败者留档，提示用户
+ */
+async function resolveConflict (key, rv, lv) {
+  const localWins = lv.dirty && newerThan(lv, rv)
+  if (localWins) {
+    // 本地胜：先把云端旧数据留档，再推送本地覆盖
+    const remoteData = await getObject(`${DATA_PREFIX}/${key}.json`)
+    await writeConflict(key, remoteData, { winner: 'local', rv, lv })
+    await pushCollection(key, rv)
+    return { action: 'push', conflict: true, winner: 'local' }
+  }
+  // 云端胜：把本地未推送修改留档，再拉取云端覆盖
+  const localData = await storage.load(key, undefined)
+  if (localData !== undefined) await writeConflict(key, localData, { winner: 'remote', rv, lv })
+  await pullCollection(key, rv)
+  return { action: 'pull', conflict: true, winner: 'remote' }
+}
+
+/**
+ * 推送本地：先写数据对象，再 bump 版本清单，最后清 dirty。
+ * 乐观并发：写前重读一次云端清单，版本若已变化则重入 syncCollection 重新决策。
+ */
+async function pushCollection (key, rv) {
+  const data = await storage.load(key, undefined)            // 本地缓存数据
+  const manifest = await readManifest()                      // 重读，防并发期间被改
+  const cur = manifest[key]
+  if (rv && cur && cur.ver !== rv.ver) return syncCollection(key, manifest) // 变了→重入
+
+  const base = Math.max(rv ? rv.ver : 0, cur ? cur.ver : 0)
+  const entry = { ver: base + 1, updatedAt: nowISO(), deviceId: DEVICE_ID }
+
+  await putObject(`${DATA_PREFIX}/${key}.json`, data)                    // 1) 写数据
+  await putObject(`${DATA_PREFIX}/_versions.json`, { ...manifest, [key]: entry }) // 2) bump 版本
+  await setLocalState(key, { baseVer: entry.ver, updatedAt: entry.updatedAt, dirty: false }) // 3) 清 dirty
+}
+
+/**
+ * 拉取云端：云端数据为权威，覆盖本地缓存并更新本地状态
+ */
+async function pullCollection (key, rv) {
+  const data = await getObject(`${DATA_PREFIX}/${key}.json`) // 云端权威数据
+  await storage.save(key, data)                              // 覆盖本地缓存
+  await setLocalState(key, { baseVer: rv.ver, updatedAt: rv.updatedAt, dirty: false })
+}
+```
+
+**要点**
+
+- **写顺序固定**：先写 `data/{key}.json`，再写 `_versions.json`。若中途失败，云端版本未 bump——下次同步时数据对象被重新覆盖为权威值，不会出现「版本新、数据旧」的错位。
+- **乐观重入**：`pushCollection` 写前重读清单，发现版本已变（另一设备抢先）则重入 `syncCollection` 重新决策，最多重试一次即收敛。
+- **本地胜时也先留档云端旧数据**：即使本地胜，云端被覆盖前的那份数据也进 `_conflicts/`，双份保险。
+
+### 5.5 冲突边界与保证
+
+- **数据永不丢失**：败者一定留档（含完整数据与版本信息），不覆盖不删除。
+- **同一集合两设备同时编辑**：以 `updatedAt` 较新者胜，平局按 `deviceId` 决胜（结果确定），败者留档。
+- **不同集合**：互不影响，各自独立同步。
+- **云端不可达**：直接使用本地缓存（P0 已实现），`dirty` 保留，重连后按矩阵自动对齐。
+
+### 5.6 本地缓存策略
 
 - 云不可达 / 读失败 → 用本地缓存（P0 已实现）。
 - 缓存保留最后已知状态，**断网可编辑**，重连后自动对齐。
@@ -107,9 +251,13 @@ key 集合：`projects / points / devices / settings / meta / notes / bills / de
 ## 8. 代码侧改造任务
 
 ### P1：版本感知同步核心
-- [ ] `ossSync.js`：读写版本清单 `_versions.json`；`load/save` 版本化；冲突时写 `_conflicts/` 留档
-- [ ] `store/index.js`：dirty 跟踪 + 防抖推送；`visibilitychange` / 60s 轮询拉取；仅变更时推送（保留 P0）
-- [ ] 数据前缀默认 `data/`（设置页默认值 + 迁移已存配置）
+- [ ] `ossSync.js`：
+  - 读写云端版本清单 `_versions.json` 与本地 `_syncstate`（`baseVer/updatedAt/dirty`）
+  - 实现 `syncCollection / resolveConflict / pushCollection / pullCollection`（见 5.4）
+  - 冲突留档 `writeConflict()` 写 `data/_conflicts/{key}-{ts}.json`
+  - 数据前缀默认 `data/`（设置页默认值 + 迁移已存配置）
+- [ ] `store/index.js`：编辑时写本地 + 置 `dirty` → 防抖（约 800ms）→ 批量推送；`visibilitychange` / 60s 轮询拉取并执行同步决策；保留 P0「仅变更时推送」
+- [ ] 首启迁移：为旧版（无版本清单）云端对象初始化 `_versions.json`（`ver=1`），避免误判冲突
 
 ### P2：体验与可见性
 - [ ] 设置页 OSS 卡片：新增「立即同步」「最后同步时间」「云端/本地状态」指示
