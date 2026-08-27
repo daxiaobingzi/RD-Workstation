@@ -121,12 +121,15 @@ onMounted(() => layout.setActions([
 
 // ---------- 阿里云 OSS 云同步 ----------
 import {
-  loadOssConfig, saveOssConfig, testOssConnection,
+  loadOssConfig, saveOssConfig, testOssConnection, hasOssConfig,
   enableOssSync, disableOssSync, isOssConfigValid
 } from '../db/ossSync'
 import { storage } from '../db/storage'
 
-const ossCfg = ref(loadOssConfig())
+const _loadedCfg = loadOssConfig()
+// 仅「全新配置」默认 data/ 前缀（与页面资源隔离）；老配置保留原前缀，避免云端数据读取位置被改动
+if (!hasOssConfig() && _loadedCfg.prefix == null) _loadedCfg.prefix = 'data'
+const ossCfg = ref(_loadedCfg)
 const ossMsg = ref('')
 const ossBusy = ref(false)
 const ossEnabled = ref(storage.mode === 'oss')
@@ -149,13 +152,15 @@ async function enableOss () {
   saveOssConfig(cfg)
   enableOssSync(cfg)
   await store.saveAll()
+  await store.flushSync() // 版本同步：确保全量数据已推送云端再提示
   ossEnabled.value = true
   store.syncText = '阿里云 OSS'
   store.online = true
-  ossMsg.value = '已启用：全量数据已推送到 OSS 指定前缀，刷新页面后仍保持云模式'
+  ossMsg.value = '已启用：数据已按版本同步推送到 OSS（' + (cfg.prefix || '根目录') + ' 前缀），刷新后保持云模式'
 }
 
 async function disableOss () {
+  await store.flushSync() // 先把未推送的本地修改同步到云端，再回退本地模式
   await disableOssSync()
   const c = loadOssConfig()
   c.enabled = false

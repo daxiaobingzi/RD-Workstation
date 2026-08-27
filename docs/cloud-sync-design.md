@@ -250,14 +250,21 @@ async function pullCollection (key, rv) {
 
 ## 8. 代码侧改造任务
 
-### P1：版本感知同步核心
-- [ ] `ossSync.js`：
+### P1：版本感知同步核心（✅ 已落地）
+- [x] `ossSync.js`：
   - 读写云端版本清单 `_versions.json` 与本地 `_syncstate`（`baseVer/updatedAt/dirty`）
-  - 实现 `syncCollection / resolveConflict / pushCollection / pullCollection`（见 5.4）
+  - 实现同步决策 `syncCollection / resolveConflict / pullCollection / pushOne`（见 5.4）
   - 冲突留档 `writeConflict()` 写 `data/_conflicts/{key}-{ts}.json`
-  - 数据前缀默认 `data/`（设置页默认值 + 迁移已存配置）
-- [ ] `store/index.js`：编辑时写本地 + 置 `dirty` → 防抖（约 800ms）→ 批量推送；`visibilitychange` / 60s 轮询拉取并执行同步决策；保留 P0「仅变更时推送」
-- [ ] 首启迁移：为旧版（无版本清单）云端对象初始化 `_versions.json`（`ver=1`），避免误判冲突
+  - 批量推送 `pushDirty()`（编辑后 800ms 防抖；先写数据、最后统一 bump 版本清单）
+  - 数据前缀：新配置默认 `data/`；**已存在的老配置保留原前缀**（避免云端数据读取位置被改动导致丢数据）
+- [x] `store/index.js`：
+  - 编辑时写本地 + 置 `dirty` → 适配器内防抖批量推送
+  - `visibilitychange` / 每 60s 轮询拉取并执行同步决策（仅云端模式）
+  - init 顺序：**先 `syncNow` 对齐云端，再加载数据**（保证读到的就是「云端权威」结果，避免脏数据被旧云端覆盖、也避免空数据回写）
+  - 保留 P0「仅变更时推送」
+  - 暴露 `syncNow / flushSync`（启用/停用同步时先落云端）
+- [x] 旧数据迁移：云端无 `_versions.json` → 首次同步为已存在对象初始化 `ver=1`，避免误判冲突
+- [x] `storage.js`：新增可选能力转发 `syncAll / flushNow`（仅 OSS 适配器实现）
 
 ### P2：体验与可见性
 - [ ] 设置页 OSS 卡片：新增「立即同步」「最后同步时间」「云端/本地状态」指示

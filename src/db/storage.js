@@ -138,7 +138,10 @@ export const storage = {
     return out
   },
   async save (k, v) { await this._adapter.save(k, v) },
-  async remove (k) { await this._adapter.remove(k) }
+  async remove (k) { await this._adapter.remove(k) },
+  // 可选能力：版本感知同步（OSS 适配器实现；本地/其他适配器无此方法则返回 undefined）
+  async syncAll () { return this._adapter.syncAll ? await this._adapter.syncAll() : undefined },
+  async flushNow () { return this._adapter.flushNow ? await this._adapter.flushNow() : undefined }
 }
 
 export { LocalAdapter, IndexedDBAdapter, CloudAdapter }

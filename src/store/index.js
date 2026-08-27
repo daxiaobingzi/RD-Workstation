@@ -87,6 +87,10 @@ export const useAppStore = defineStore('app', () => {
     // 首次启动判定：从未初始化过（无版本标记）。注意 localStorage 与 IndexedDB 相互独立、
     // 版本标记可能被单独清除，因此绝不再用「版本过低」触发重建数据（防刷新丢数据）
     const firstLaunch = !lsHas(LS.VER)
+    // 版本感知云同步：先与云端对齐（建立本地 baseVer/dirty、裁决冲突、完成旧数据迁移），
+    // 再读取数据，确保加载到的是「云端权威」对齐后的结果
+    startAutoSync()
+    await syncNow(true)
     projects.value = (await storage.load(COLLECTIONS.projects, [])) || []
     points.value = (await storage.load(COLLECTIONS.points, [])) || []
     devices.value = (await storage.load(COLLECTIONS.devices, [])) || []
@@ -185,6 +189,36 @@ export const useAppStore = defineStore('app', () => {
   async function saveAll () {
     await persistAll()
     lsSet(LS.VER, APP_VER)
+  }
+
+  // ---------- 版本感知云同步（P1：参照 Notion，云端为主、本地缓存）----------
+  let syncTimer = null
+  /** 开启自动同步：切回前台 + 每 60s 轮询（仅云端模式；本地模式无操作） */
+  function startAutoSync () {
+    if (storage.mode !== 'oss') return
+    const onVisible = () => { if (document.visibilityState === 'visible') syncNow(false) }
+    document.addEventListener('visibilitychange', onVisible)
+    clearInterval(syncTimer)
+    syncTimer = setInterval(() => { if (document.visibilityState === 'visible') syncNow(false) }, 60000)
+  }
+
+  /** 立即执行一轮版本感知同步（拉取 + 裁决 + 推送）；notify=true 时对冲突 toast 提示 */
+  async function syncNow (notify) {
+    if (storage.mode !== 'oss') return
+    try {
+      const r = await storage.syncAll()
+      if (notify && r && r.conflicts && r.conflicts.length) {
+        toast('同步冲突：' + r.conflicts.join('、') + ' 已自动留档，可在云端 _conflicts 查看')
+      }
+    } catch (e) {
+      console.warn('[store] 同步异常', e && e.message)
+    }
+  }
+
+  /** 立即推送本地脏数据到云端（启用/停用同步时保证先落云端） */
+  async function flushSync () {
+    if (storage.mode !== 'oss') return
+    try { await storage.flushNow() } catch (e) { console.warn('[store] 同步推送异常', e && e.message) }
   }
 
   // ---------- Toast ----------
@@ -1050,6 +1084,8 @@ export const useAppStore = defineStore('app', () => {
     quoteOfBill,
     // 初始化 / 持久化
     init, saveAll, toast,
+    // 版本感知云同步
+    syncNow, flushSync,
     // 项目
     newProject, updateProject, deleteProject, copyProject, setProjectStatus,
     setProjectBudget, projectBudget, setProjectSelection, bulkSelectionByTier, selectionOf, getProjectSelection,
