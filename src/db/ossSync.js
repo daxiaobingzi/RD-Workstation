@@ -263,27 +263,10 @@ export function createOSSAdapter (cfg) {
   /** 单个集合的同步决策（判定矩阵见方案 5.3） */
   async function syncCollection (key, manifest) {
     const rv = manifest[key] || null
-    const st = await readLocalState()
-    const lv = st[key] || null
-    // 老本地数据首次进入云模式（本地缓存有数据但 _syncstate 缺失）：
-    // 视为「本地待推送数据」，绝不让云端旧/空对象盲目覆盖本地真实数据（防刷新丢数据）
-    if (!lv) {
-      const localHas = await localCache.load(key, undefined)
-      if (localHas === undefined) {
-        if (rv) { await pullCollection(key, rv); return { action: 'pull' } }
-        return { action: 'none' }
-      }
-      st[key] = { baseVer: 0, updatedAt: nowISO(), dirty: true }
-      await writeLocalState(st)
-      if (rv) {
-        // 云端也有数据 → 冲突裁决（本地数据按「刚产生」对待，通常本地胜，云端留档）
-        const remoteData = await getObjSafe(key)
-        if (remoteData !== null) return await resolveConflict(key, rv, st[key])
-      }
-      await pushOne(key, manifest)
-      return { action: 'push' }
-    }
+    const lv = (await readLocalState())[key] || null
+    if (!rv && !lv) return { action: 'none' }
     if (!rv && lv.dirty) { await pushOne(key, manifest); return { action: 'push' } }
+    if (!lv) { await pullCollection(key, rv); return { action: 'pull' } }
     if (rv.ver > lv.baseVer) {
       if (lv.dirty) return await resolveConflict(key, rv, lv)
       await pullCollection(key, rv)
@@ -298,12 +281,12 @@ export function createOSSAdapter (cfg) {
   async function syncAll () {
     if (_syncing) return { skipped: true }
     _syncing = true
-    const result = { pulled: [], pushed: [], conflicts: [], skipped: false, ok: true }
+    const result = { pulled: [], pushed: [], conflicts: [], skipped: false }
     try {
       let manifest
       try { manifest = await fetchManifest() } catch (e) {
         console.warn('[oss-sync] 拉取版本清单失败，跳过本轮同步', e && e.message)
-        return { ...result, ok: false }
+        return result
       }
       // 旧数据迁移：云端无版本清单 → 为已存在的对象初始化 ver=1（一次性，避免误判冲突）
       if (manifest == null) {
