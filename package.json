@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "ali-oss": "^6.23.0",
     "pinia": "^2.3.0",
     "vue": "^3.5.13"
   },
