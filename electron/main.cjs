@@ -12,7 +12,7 @@ function createWindow () {
     height: 860,
     minWidth: 960,
     minHeight: 640,
-    title: '弱电智能化设计工作台',
+    title: '我的工作台',
     autoHideMenuBar: true,
     icon: path.join(ROOT, 'dist-desktop', 'app-icons', 'icon-512.png'),
     webPreferences: {

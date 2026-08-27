@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['app-icons/icon-192.png', 'app-icons/icon-512.png'],
       manifest: {
-        name: '弱电智能化设计工作台',
-        short_name: '弱电工作台',
-        description: '弱电智能化设计统一工作台 · 跨设备同步 · 电脑/平板/手机自适应',
+        name: '我的工作台',
+        short_name: '我的工作台',
+        description: '弱电智能化设计统一工作台 · 纯本地离线 · 电脑/平板/手机自适应',
         theme_color: '#0b1220',
         background_color: '#f4f6fb',
         display: 'standalone',

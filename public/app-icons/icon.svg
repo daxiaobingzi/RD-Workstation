@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="我的工作台">
+  <defs>
+    <linearGradient id="bgG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="0.5" stop-color="#111d3a"/>
+      <stop offset="1" stop-color="#1c3a86"/>
+    </linearGradient>
+    <linearGradient id="screenG" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="edgeG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <pattern id="grid" width="72" height="72" patternUnits="userSpaceOnUse">
+      <path d="M72 0 H0 V72" fill="none" stroke="#3b82f6" stroke-opacity="0.10" stroke-width="2"/>
+    </pattern>
+    <clipPath id="tile">
+      <rect x="16" y="16" width="992" height="992" rx="232"/>
+    </clipPath>
+    <filter id="soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <!-- 深色琉璃圆角底 + 蓝图网格 + 描边 -->
+  <rect x="16" y="16" width="992" height="992" rx="232" fill="url(#bgG)"/>
+  <rect x="16" y="16" width="992" height="992" rx="232" fill="url(#grid)" clip-path="url(#tile)"/>
+  <rect x="16" y="16" width="992" height="992" rx="232" fill="none" stroke="#60a5fa" stroke-opacity="0.30" stroke-width="4"/>
+
+  <!-- 弱电信号弧 + 三个节点（青/蓝/工程橙） -->
+  <path d="M396 264 C 440 208, 584 208, 628 264" fill="none" stroke="url(#edgeG)" stroke-width="16" stroke-linecap="round" opacity="0.95"/>
+  <circle cx="396" cy="264" r="30" fill="#22d3ee"/>
+  <circle cx="512" cy="218" r="38" fill="#3b82f6"/>
+  <circle cx="512" cy="218" r="14" fill="#ffffff" opacity="0.9"/>
+  <circle cx="628" cy="264" r="30" fill="#ea580c"/>
+
+  <!-- 显示器：发光渐变屏 + 内网格 + 上升曲线 -->
+  <rect x="298" y="330" width="428" height="304" rx="42" fill="url(#screenG)" opacity="0.92"/>
+  <rect x="298" y="330" width="428" height="304" rx="42" fill="none" stroke="#60a5fa" stroke-opacity="0.55" stroke-width="5"/>
+  <g stroke="#e0f2fe" stroke-opacity="0.16" stroke-width="3">
+    <path d="M330 404 H694 M330 476 H694 M330 548 H694"/>
+    <path d="M402 362 V602 M494 362 V602 M586 362 V602"/>
+  </g>
+  <path d="M330 562 C 380 548, 420 526, 462 520 C 510 512, 540 486, 586 472 C 620 461, 656 440, 694 420"
+        fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="694" cy="420" r="14" fill="#ffffff"/>
+
+  <!-- 显示器支架 -->
+  <rect x="458" y="634" width="108" height="48" rx="16" fill="#93c5fd" opacity="0.95"/>
+  <rect x="414" y="682" width="196" height="24" rx="12" fill="#7dd3fc" opacity="0.95"/>
+
+  <!-- 工作台台面 + 投影 -->
+  <rect x="228" y="746" width="568" height="36" rx="18" fill="url(#edgeG)" opacity="0.96"/>
+  <rect x="228" y="790" width="568" height="10" rx="5" fill="#0b1220" opacity="0.30"/>
+</svg>

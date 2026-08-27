@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "com.rwstation.desktop",
-    "productName": "弱电工作台",
+    "productName": "我的工作台",
     "directories": {
       "output": "release"
     },
