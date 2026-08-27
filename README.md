@@ -27,7 +27,6 @@ src/
     SettingsView.vue       # 系统配置（参数/品牌/定额/模板/数据管理）
   components/              # UI 组件与业务弹窗（项目/设备/数量推算/清单历史等）
   composables/             # 布局总线与弹窗/确认框/输入框
-legacy/                    # 初版单文件 HTML（v12，参考用）
 ```
 
 ## 开发命令
