@@ -79,29 +79,14 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  function resetDemoData () {
-    projects.value = seedProjects()
-    points.value = seedPoints()
-    devices.value = seedDevices()
-    settings.value = seedAllSettings()
-    notes.value = seedNotes()
-    meta.value = seedMeta()
-    bills.value = {}
-    devSort.value = {}
-    devBrands.value = {}
-    persistAll()
-  }
-
   async function init () {
-    // 版本升级：旧数据作废重建示例（与初版 v8 行为一致）
-    if ((lsGet(LS.VER, 0) || 0) < APP_VER) {
-      resetDemoData()
-      lsSet(LS.VER, APP_VER)
-    }
     // 存储迁移：localStorage → IndexedDB（幂等；旧数据搬入 IndexedDB 并释放 localStorage）
     try { await migrateLegacyData() } catch (e) { console.warn('[store] 数据迁移异常', e && e.message) }
     // 恢复云模式：若之前启用了阿里云 OSS 同步，先把 storage 切回云端适配器再读取数据
     try { restoreOssIfEnabled() } catch (e) { console.warn('[store] OSS 同步恢复异常', e && e.message) }
+    // 首次启动判定：从未初始化过（无版本标记）。注意 localStorage 与 IndexedDB 相互独立、
+    // 版本标记可能被单独清除，因此绝不再用「版本过低」触发重建数据（防刷新丢数据）
+    const firstLaunch = !lsHas(LS.VER)
     projects.value = (await storage.load(COLLECTIONS.projects, [])) || []
     points.value = (await storage.load(COLLECTIONS.points, [])) || []
     devices.value = (await storage.load(COLLECTIONS.devices, [])) || []
@@ -111,6 +96,10 @@ export const useAppStore = defineStore('app', () => {
     bills.value = (await storage.load(COLLECTIONS.bills, {})) || {}
     devSort.value = (await storage.load(COLLECTIONS.devSort, {})) || {}
     devBrands.value = (await storage.load(COLLECTIONS.devBrands, {})) || {}
+
+    // 记录加载完成后、归一化前的快照：仅当归一化/播种确实产生变更时才落库，
+    // 避免云模式下把空数据或旧缓存回写覆盖云端（P0 防数据丢失）
+    const before = snapshotJSON()
 
     // 归一化与兜底
     if (!settings.value.subsystems || !settings.value.subsystems.length) {
@@ -132,10 +121,20 @@ export const useAppStore = defineStore('app', () => {
     normalizePointDeviceIds()
     devices.value.forEach(d => ensureDeviceChain(d))
     meta.value = ensureBusinessMeta(meta.value)
+
+    // 仅「从未初始化」且「本地/云端均无业务数据」时播种示例。
+    // 非破坏性：用户主动清空后不再恢复；云端模式不播种，避免把示例推送到共享 OSS 覆盖真实数据。
+    if (firstLaunch && isEmptyData() && storage.mode === 'local') {
+      seedDemo()
+    }
+
     ready.value = true
     loading.value = false
-    // 归一化结果落库，确保下次启动前其他依赖（如模板克隆、点表回填）读到已回填状态
-    await persistAll()
+    // 归一化/播种若产生变更则落库（无变更不写），确保下次启动读到已回填状态
+    if (snapshotJSON() !== before) {
+      await persistAll()
+    }
+    lsSet(LS.VER, APP_VER)
   }
 
   function lsGet (k, fb) {
@@ -143,6 +142,26 @@ export const useAppStore = defineStore('app', () => {
       const v = localStorage.getItem(k)
       return v ? JSON.parse(v) : fb
     } catch (e) { return fb }
+  }
+
+  /** 键是否存在（区别于取默认值，用于首启判定） */
+  function lsHas (k) {
+    try { return localStorage.getItem(k) !== null } catch (e) { return false }
+  }
+
+  /** 业务数据是否全空（用于判断是否需要播种示例数据） */
+  function isEmptyData () {
+    return !(projects.value.length || points.value.length || devices.value.length ||
+      Object.keys(notes.value).length || Object.keys(bills.value).length ||
+      Object.keys(devSort.value).length || Object.keys(devBrands.value).length)
+  }
+
+  /** 全量数据快照（JSON 序列化后比较是否变更） */
+  function snapshotJSON () {
+    return JSON.stringify([
+      projects.value, points.value, devices.value, settings.value,
+      meta.value, notes.value, bills.value, devSort.value, devBrands.value
+    ])
   }
 
   // ---------- 持久化 ----------

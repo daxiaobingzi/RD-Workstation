@@ -4,8 +4,14 @@
 //   拉取 = GetObject，推送 = PutObject，删除 = DeleteObject。
 // 认证用官方 ali-oss SDK（浏览器版），配置（Bucket/Region/AK/SK）为本机浏览器私有设置，
 // 不落入业务集合，避免「同步配置自身被同步」的自举问题。
+// 安全须知：
+//   - 本机存储的 AK/SK 仅做轻量混淆（防明文直读），非加密；
+//     生产环境建议改用后端签发 STS 临时凭证，或用仅授权本 Bucket 前缀的受限 RAM 子账号。
+//   - 浏览器直连必须在 Bucket 的 CORS 规则里放行当前站点来源（否则 GetObject/PutObject 会被浏览器拦截）。
+// 健壮性：云模式读写均同步维护一份 IndexedDB 本地副本；云端读取失败/无对象时回退本地，
+//         避免「读失败→空数据→回写覆盖云端」的数据丢失。
 // ali-oss 采用动态导入：独立 chunk 按需加载，避免拖慢首屏。
-import { storage } from './storage'
+import { storage, IndexedDBAdapter } from './storage'
 import { enableCloudSync, disableCloudSync } from './cloudSync'
 
 // 允许云同步的集合（与 cloudSync.js 的 SYNC_KEYS 保持一致）
@@ -14,15 +20,46 @@ export const OSS_SYNC_KEYS = ['projects', 'points', 'devices', 'settings', 'meta
 // 本机私有配置键（localStorage；仅几百字节，不占 IndexedDB 业务空间）
 export const OSS_CFG_KEY = 'wb_elv_oss_cfg'
 
+// 本地缓存适配器：云模式读取失败时的回退源，也是每次读写的本地副本（IndexedDB）
+const localCache = new IndexedDBAdapter()
+
 // ---------- 配置读写 ----------
+// AK/SK 属敏感凭证：本机存储仅做轻量混淆（防明文直读，非加密）。
+// 真正的安全边界依赖：① 后端签发 STS 临时凭证；② RAM 子账号仅授予该 Bucket 前缀的最小权限。
+// 旧版本地明文配置仍可读取（无 o1: 前缀按明文处理），再次保存后自动转为混淆存储。
+const OSS_CFG_MASK = 'wb-elv-oss'
+function _xorText (s) {
+  return s.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ OSS_CFG_MASK.charCodeAt(i % OSS_CFG_MASK.length))).join('')
+}
+function obfuscate (s) {
+  if (s == null || s === '') return s
+  try {
+    const str = String(s)
+    if (/[^\x00-\xff]/.test(str)) return str // 非 Latin1 字符不混淆，保持兼容
+    return 'o1:' + btoa(_xorText(str))
+  } catch (e) { return s }
+}
+function deobfuscate (s) {
+  if (s == null || String(s).indexOf('o1:') !== 0) return s
+  try { return _xorText(atob(String(s).slice(3))) } catch (e) { return s }
+}
 export function loadOssConfig () {
   try {
     const raw = localStorage.getItem(OSS_CFG_KEY)
-    return raw ? JSON.parse(raw) : {}
+    if (!raw) return {}
+    const cfg = JSON.parse(raw)
+    if (cfg.accessKeyId) cfg.accessKeyId = deobfuscate(cfg.accessKeyId)
+    if (cfg.accessKeySecret) cfg.accessKeySecret = deobfuscate(cfg.accessKeySecret)
+    return cfg
   } catch (e) { return {} }
 }
 export function saveOssConfig (cfg) {
-  try { localStorage.setItem(OSS_CFG_KEY, JSON.stringify(cfg)) } catch (e) {}
+  try {
+    const out = { ...cfg }
+    if (out.accessKeyId) out.accessKeyId = obfuscate(out.accessKeyId)
+    if (out.accessKeySecret) out.accessKeySecret = obfuscate(out.accessKeySecret)
+    localStorage.setItem(OSS_CFG_KEY, JSON.stringify(out))
+  } catch (e) {}
 }
 export function clearOssConfig () {
   try { localStorage.removeItem(OSS_CFG_KEY) } catch (e) {}
@@ -66,7 +103,10 @@ export async function testOssConnection (cfg) {
   } catch (e) {
     const status = (e && e.status) || (e && e.code && e.code)
     const msg = (e && e.message) || (e && e.name) || String(e)
-    return { ok: false, message: `连接失败（${status || '未知错误'}）：${msg}` }
+    const hint = /cors|access.?control|network|failed to fetch|load failed|timeout/i.test(msg)
+      ? '；请检查 Bucket 的 CORS 规则是否放行当前站点来源，或 AK 权限/网络是否可达'
+      : ''
+    return { ok: false, message: `连接失败（${status || '未知错误'}）：${msg}${hint}` }
   }
 }
 
@@ -90,26 +130,39 @@ export function createOSSAdapter (cfg) {
     name: 'oss',
     async load (k, fb) {
       if (!OSS_SYNC_KEYS.includes(k)) return fb
+      // 云端读取失败/无对象时回退本地缓存，避免空数据回写覆盖云端
+      const fromLocal = async () => {
+        try {
+          const cached = await localCache.load(k, undefined)
+          return cached !== undefined ? cached : fb
+        } catch (e) { return fb }
+      }
       try {
         const client = await getClient()
         const r = await client.get(keyOf(k))
-        if (!r || r.status === 404 || r.content === undefined || r.content === null) return fb
+        if (!r || r.status === 404 || r.content === undefined || r.content === null) return fromLocal()
         const text = decode(r.content)
-        return text ? JSON.parse(text) : fb
+        const data = text ? JSON.parse(text) : null
+        if (data == null) return fromLocal()
+        // 云为权威：读成功后把本地缓存刷新为同份数据，作为断网/降级回退源
+        try { await localCache.save(k, data) } catch (e) {}
+        return data
       } catch (e) {
-        // NoSuchKey → 远端无此对象，返回默认值（与 REST 版 404 语义一致）
-        if (e && (e.status === 404 || e.code === 'NoSuchKey' || e.name === 'NoSuchKey')) return fb
-        console.warn('[oss-sync] 拉取失败', k, e && e.message)
-        return fb
+        // NoSuchKey → 远端无此对象，回退本地（与 REST 版 404 语义一致）
+        if (e && (e.status === 404 || e.code === 'NoSuchKey' || e.name === 'NoSuchKey')) return fromLocal()
+        console.warn('[oss-sync] 拉取失败，回退本地缓存', k, e && e.message)
+        return fromLocal()
       }
     },
     async save (k, v) {
       if (!OSS_SYNC_KEYS.includes(k)) return
+      // 先写本地缓存，云端推送失败时数据仍安全留存（可作为离线回退源）
+      try { await localCache.save(k, v) } catch (e) {}
       try {
         const client = await getClient()
         await client.put(keyOf(k), JSON.stringify(v), { contentType: 'application/json; charset=utf-8' })
       } catch (e) {
-        console.warn('[oss-sync] 推送失败', k, e && e.message)
+        console.warn('[oss-sync] 推送失败，数据已保留在本地缓存', k, e && e.message)
       }
     },
     async remove (k) {
