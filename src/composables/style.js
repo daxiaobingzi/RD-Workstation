@@ -104,10 +104,13 @@ function computedRootVars (theme) {
   return out
 }
 
-// 风格元信息（供 UI 展示）
+// 风格元信息（供 UI 展示；已隐藏的预置视为不可见，返回 null）
 function styleMeta (id) {
   const preset = PRESET_STYLES.find(p => p.id === id)
-  if (preset) return { id, name: preset.name, desc: preset.desc, tags: preset.tags, swatch: preset.swatch, custom: false }
+  if (preset) {
+    if (hiddenPresets.value.includes(id)) return null
+    return { id, name: preset.name, desc: preset.desc, tags: preset.tags, swatch: preset.swatch, custom: false }
+  }
   const custom = customStyles.value.find(c => c.id === id)
   if (custom) return { id, name: custom.name, desc: custom.desc || '自定义风格', tags: ['自定义'], swatch: [custom.light?.['--primary'] || '#2563eb', custom.light?.['--accent'] || '#0891b2', custom.light?.['--bg'] || '#f6f8fc'], custom: true }
   return null
@@ -139,18 +142,27 @@ function setStyle (id) {
   apply(id)
 }
 
-// 显式恢复某主题变量到 :root（编辑器预览亮/暗用，baseId 指定继承基底）
+// 显式预览某主题下的变量（编辑器亮/暗 tab 用，baseId 指定继承基底）
+// 只预览「可编辑变量集」，其余变量仍来自当前主题，避免切 tab 时整页被整套主题污染
 function previewVars (theme, vars, baseId) {
   const r = root()
   if (!r) return
   appliedVars.forEach(k => r.style.removeProperty(k))
   appliedVars = []
   const base = varsOf(baseId || styleId.value, theme)
-  const merged = Object.assign({}, base, vars)
-  Object.keys(merged).forEach(k => {
-    r.style.setProperty(k, merged[k])
-    appliedVars.push(k)
+  CUSTOM_VAR_KEYS.forEach(([k]) => {
+    const v = vars && vars[k] != null && String(vars[k]).trim() ? vars[k] : base[k]
+    if (v) {
+      r.style.setProperty(k, v)
+      appliedVars.push(k)
+    }
   })
+}
+
+// 第一个尚未被隐藏的可见预置（避免回退到已隐藏风格造成「幽灵选中」）
+function firstVisiblePresetId () {
+  const p = PRESET_STYLES.find(s => !hiddenPresets.value.includes(s.id))
+  return p ? p.id : PRESET_STYLES[0].id
 }
 
 // 隐藏（删除）预置风格，可恢复
@@ -158,7 +170,7 @@ function hidePreset (id) {
   if (!PRESET_IDS.has(id)) return
   hiddenPresets.value = [...new Set([...hiddenPresets.value, id])]
   writeJSON(KEY_HIDDEN, hiddenPresets.value)
-  if (styleId.value === id) apply(PRESET_STYLES[0].id)
+  if (styleId.value === id) apply(firstVisiblePresetId())
 }
 function restorePreset (id) {
   hiddenPresets.value = hiddenPresets.value.filter(x => x !== id)
@@ -167,13 +179,23 @@ function restorePreset (id) {
 
 function persistCustom () { writeJSON(KEY_CUSTOM, customStyles.value) }
 
+// 合并覆盖项：空串视为"不覆盖"，避免把空值写进快照造成样式缺失
+function pickOverrides (base, ov) {
+  const out = Object.assign({}, base)
+  Object.keys(ov || {}).forEach(k => {
+    const v = ov[k]
+    if (v != null && String(v).trim()) out[k] = v
+  })
+  return out
+}
+
 // 以某风格（预置或自定义）为基底创建一个自定义风格
 function createCustomFrom (baseId, name, overrides = {}) {
   const id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   const baseLight = varsOf(baseId, 'light')
   const baseDark = varsOf(baseId, 'dark')
-  const light = Object.assign({}, baseLight, overrides.light || {})
-  const dark = Object.assign({}, baseDark, overrides.dark || {})
+  const light = pickOverrides(baseLight, overrides.light)
+  const dark = pickOverrides(baseDark, overrides.dark)
   const item = { id, name, desc: '自定义风格', custom: true, light, dark, baseId }
   customStyles.value.push(item)
   persistCustom()
@@ -181,14 +203,16 @@ function createCustomFrom (baseId, name, overrides = {}) {
   return item
 }
 
-// 更新自定义风格（可改名称与任一主题变量）
+// 更新自定义风格（可改名称与任一主题变量；值为空串时删除该项，交还基底/CSS 默认）
 function updateCustom (id, name, overrides = {}) {
   const item = customStyles.value.find(c => c.id === id)
   if (!item) return
   if (name && String(name).trim()) item.name = String(name).trim()
   const applyOv = (tgt, ov) => {
     Object.keys(ov || {}).forEach(k => {
-      if (ov[k] != null && String(ov[k]).trim()) tgt[k] = ov[k]
+      if (ov[k] == null) return
+      if (String(ov[k]).trim() === '') { delete tgt[k]; return }
+      tgt[k] = ov[k]
     })
   }
   applyOv(item.light, overrides.light)
@@ -200,7 +224,7 @@ function updateCustom (id, name, overrides = {}) {
 function removeCustom (id) {
   customStyles.value = customStyles.value.filter(c => c.id !== id)
   persistCustom()
-  if (styleId.value === id) apply(PRESET_STYLES[0].id)
+  if (styleId.value === id) apply(firstVisiblePresetId())
 }
 
 function switchThemeAndApply () { reapply() }

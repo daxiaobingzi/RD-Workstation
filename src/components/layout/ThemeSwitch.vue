@@ -8,7 +8,8 @@ const KEY = 'wb_elv_theme'
 const mode = ref('system')
 let mq = null
 
-function sysTheme () { return mq && mq.matches ? 'light' : 'dark' }
+// 系统主题：正向匹配深色；不支持媒体查询时回落亮色（语义更稳）
+function sysTheme () { return mq && mq.matches ? 'dark' : 'light' }
 function readMode () {
   try {
     const m = localStorage.getItem(KEY)
@@ -26,7 +27,7 @@ function apply () {
 function onChange () { if (readMode() === 'system') apply() }
 
 onMounted(() => {
-  mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null
+  mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
   if (mq && mq.addEventListener) mq.addEventListener('change', onChange)
   apply()
 })

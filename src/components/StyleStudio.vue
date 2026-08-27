@@ -21,6 +21,8 @@ function colorOf (vars, k, def) {
   const m = String(v).match(/#[0-9a-fA-F]{6}|rgba?\([^)]+\)/)
   return m ? m[0] : def
 }
+// 仅当变量为纯 hex 色值时展示取色板（rgba/渐变无法渲染进 color input，避免显示黑块/破坏透明度）
+function isHex (v) { return /^#[0-9a-fA-F]{3,8}$/.test(String(v).trim()) }
 function presetSwatch (s) { return s.swatch || ['#2563eb', '#0891b2', '#f6f8fc'] }
 function customSwatch (c) {
   return [
@@ -179,7 +181,8 @@ async function removeStyle (s) {
                 <input v-if="k === '--radius'" v-model="edLight[k]" placeholder="16px" style="font-family:var(--mono)">
                 <input v-else-if="k === '--wallpaper'" v-model="edLight[k]" placeholder="linear-gradient(...)" style="font-family:var(--mono);font-size:12px">
                 <template v-else>
-                  <input :value="colorOf(edLight, k, '#000000')" type="color" style="width:46px;padding:3px;height:40px;flex-shrink:0" @input="e => { edLight[k] = e.target.value; livePreview() }">
+                  <input v-if="isHex(edLight[k])" :value="edLight[k]" type="color" style="width:46px;padding:3px;height:40px;flex-shrink:0" @input="e => { edLight[k] = e.target.value; livePreview() }">
+                  <span v-else class="no-swatch" title="当前为 rgba/渐变，请在右侧文本框直接修改">∅</span>
                   <input :value="edLight[k]" style="font-family:var(--mono);font-size:12px" @input="e => { edLight[k] = e.target.value; livePreview() }">
                 </template>
               </template>
@@ -187,7 +190,8 @@ async function removeStyle (s) {
                 <input v-if="k === '--radius'" v-model="edDark[k]" placeholder="16px" style="font-family:var(--mono)">
                 <input v-else-if="k === '--wallpaper'" v-model="edDark[k]" placeholder="linear-gradient(...)" style="font-family:var(--mono);font-size:12px">
                 <template v-else>
-                  <input :value="colorOf(edDark, k, '#000000')" type="color" style="width:46px;padding:3px;height:40px;flex-shrink:0" @input="e => { edDark[k] = e.target.value; livePreview() }">
+                  <input v-if="isHex(edDark[k])" :value="edDark[k]" type="color" style="width:46px;padding:3px;height:40px;flex-shrink:0" @input="e => { edDark[k] = e.target.value; livePreview() }">
+                  <span v-else class="no-swatch" title="当前为 rgba/渐变，请在右侧文本框直接修改">∅</span>
                   <input :value="edDark[k]" style="font-family:var(--mono);font-size:12px" @input="e => { edDark[k] = e.target.value; livePreview() }">
                 </template>
               </template>
@@ -242,6 +246,9 @@ async function removeStyle (s) {
   background:var(--glass-3);border:1px solid var(--glass-edge);
   box-shadow:var(--shadow-lg),inset 0 1px 0 rgba(255,255,255,.6);
   backdrop-filter:blur(30px) saturate(1.6);-webkit-backdrop-filter:blur(30px) saturate(1.6)}
+/* rgba/渐变变量无取色板，用等宽占位提示 */
+.no-swatch{width:46px;height:40px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:9px;font-size:14px;color:var(--text3);background:var(--glass-1);border:1px dashed var(--line2)}
 .ed-tabs{display:flex;gap:6px;margin:6px 0 12px}
 .ed-tabs button{flex:1;padding:8px 0;border-radius:999px;font-size:13px;font-weight:600;color:var(--text2);
   background:var(--glass-1);border:1px solid var(--line);cursor:pointer;transition:all .18s}
