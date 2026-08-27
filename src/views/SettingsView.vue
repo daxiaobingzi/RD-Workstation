@@ -10,7 +10,6 @@ import VIcon from '../components/ui/VIcon.vue'
 import BrandFormDialog from '../components/dialogs/BrandFormDialog.vue'
 import SubsystemFormDialog from '../components/dialogs/SubsystemFormDialog.vue'
 import QuotaFormDialog from '../components/dialogs/QuotaFormDialog.vue'
-import ConflictViewDialog from '../components/dialogs/ConflictViewDialog.vue'
 
 const store = useAppStore()
 const layout = useLayout()
@@ -120,76 +119,8 @@ onMounted(() => {
     { label: '导出JSON', icon: 'dl', cls: 'ghost', onClick: exportJSON },
     { label: '导入恢复', icon: 'ul', cls: 'ghost', onClick: importJSON }
   ])
-  loadConflicts()
 })
 
-// ---------- 阿里云 OSS 云同步 ----------
-import {
-  loadOssConfig, saveOssConfig, testOssConnection, hasOssConfig,
-  enableOssSync, disableOssSync, isOssConfigValid
-} from '../db/ossSync'
-import { storage } from '../db/storage'
-
-const _loadedCfg = loadOssConfig()
-// 仅「全新配置」默认 data/ 前缀（与页面资源隔离）；老配置保留原前缀，避免云端数据读取位置被改动
-if (!hasOssConfig() && _loadedCfg.prefix == null) _loadedCfg.prefix = 'data'
-const ossCfg = ref(_loadedCfg)
-const ossMsg = ref('')
-const ossBusy = ref(false)
-const ossEnabled = ref(storage.mode === 'oss')
-const ossModeTxt = ossEnabled.value
-  ? '云端模式（阿里云 OSS 直连）'
-  : '本地模式（IndexedDB）'
-
-async function testOssConn () {
-  ossBusy.value = true
-  ossMsg.value = '正在连接并校验权限…'
-  const r = await testOssConnection(ossCfg.value)
-  ossMsg.value = r.message
-  if (r.ok) saveOssConfig({ ...ossCfg.value, enabled: ossEnabled.value })
-  ossBusy.value = false
-}
-
-async function enableOss () {
-  const cfg = { ...ossCfg.value, enabled: true }
-  if (!isOssConfigValid(cfg)) { ossMsg.value = '请先填写 Bucket、Region、AccessKey 后再启用'; return }
-  saveOssConfig(cfg)
-  enableOssSync(cfg)
-  await store.saveAll()
-  await store.flushSync() // 版本同步：确保全量数据已推送云端再提示
-  loadConflicts()
-  ossEnabled.value = true
-  store.syncText = '阿里云 OSS'
-  store.online = true
-  ossMsg.value = '已启用：数据已按版本同步推送到 OSS（' + (cfg.prefix || '根目录') + ' 前缀），刷新后保持云模式'
-}
-
-async function disableOss () {
-  await store.flushSync() // 先把未推送的本地修改同步到云端，再回退本地模式
-  await disableOssSync()
-  const c = loadOssConfig()
-  c.enabled = false
-  saveOssConfig(c)
-  ossEnabled.value = false
-  store.syncText = '离线模式'
-  store.online = false
-  ossMsg.value = '已停用：回到本机 IndexedDB 存储（云端对象保留，再次启用会覆盖）'
-}
-
-// ---------- P2：同步状态与冲突记录 ----------
-const conflicts = ref([])
-const syncing = ref(false)
-function loadConflicts () {
-  store.listConflicts().then(list => { conflicts.value = list || [] })
-}
-function viewConflict (c) { openDialog(ConflictViewDialog, { entry: c }) }
-async function doSync () {
-  syncing.value = true
-  await store.syncNow(true)
-  syncing.value = false
-  loadConflicts()
-  store.toast(store.lastSyncSummary ? '同步完成：' + store.lastSyncSummary : '已同步')
-}
 onBeforeUnmount(() => layout.setActions([]))
 </script>
 
@@ -346,77 +277,6 @@ onBeforeUnmount(() => layout.setActions([]))
       </div>
     </div>
 
-    <!-- 阿里云 OSS 云同步 -->
-    <div class="card set-group">
-      <div class="card-title">阿里云 OSS 云同步 <span class="sub">跨设备数据同步 · 浏览器直连 Bucket（方案A）</span></div>
-
-      <div class="kv-row">
-        <div>
-          <div class="k">当前模式</div>
-          <div class="d">云模式：数据读写直达 OSS 对象（projects/points/devices 等 8 个集合，各对应一个 .json 对象）</div>
-        </div>
-        <div class="v">
-          <span class="oss-tag" :class="ossEnabled ? 'on' : ''">{{ ossEnabled ? '云端模式已启用' : '本地 IndexedDB' }}</span>
-        </div>
-      </div>
-
-      <div class="oss-grid">
-        <label>Bucket 名称
-          <input v-model="ossCfg.bucket" placeholder="如 my-rd-workstation" autocomplete="off">
-        </label>
-        <label>Region 地域
-          <input v-model="ossCfg.region" placeholder="如 oss-cn-hangzhou" autocomplete="off">
-        </label>
-        <label>AccessKey ID
-          <input v-model="ossCfg.accessKeyId" placeholder="RAM 子账号 AccessKey ID" autocomplete="off">
-        </label>
-        <label>AccessKey Secret
-          <input v-model="ossCfg.accessKeySecret" type="password" placeholder="RAM 子账号 AccessKey Secret" autocomplete="off">
-        </label>
-        <label>对象前缀（可选）
-          <input v-model="ossCfg.prefix" placeholder="如 rd-workshop，留空存 Bucket 根目录" autocomplete="off">
-        </label>
-        <label>自定义 Endpoint（可选）
-          <input v-model="ossCfg.endpoint" placeholder="绑定自定义域名时填，如 oss.example.com" autocomplete="off">
-        </label>
-      </div>
-
-      <div class="oss-actions">
-        <button class="btn btn-ghost btn-sm" :disabled="ossBusy" @click="testOssConn"><VIcon name="refresh" />测试连接</button>
-        <button v-if="!ossEnabled" class="btn btn-primary btn-sm" :disabled="ossBusy" @click="enableOss"><VIcon name="cloud" />启用同步</button>
-        <button v-else class="btn btn-danger btn-sm" :disabled="ossBusy" @click="disableOss"><VIcon name="x" />停用同步</button>
-        <span class="oss-msg" :class="{ err: /失败|错误|先填写/.test(ossMsg) }">{{ ossMsg || '&nbsp;' }}</span>
-      </div>
-
-      <div v-if="ossEnabled" class="kv-row" style="margin-top:6px">
-        <div>
-          <div class="k">最后同步</div>
-          <div class="d">{{ store.lastSyncAt ? store.lastSyncAt + ' · ' + store.lastSyncSummary : '尚未同步（切回前台 / 每 60 秒自动同步）' }}</div>
-        </div>
-        <div class="v">
-          <button class="btn btn-primary btn-sm" :disabled="syncing" @click="doSync"><VIcon name="refresh" />立即同步</button>
-        </div>
-      </div>
-
-      <div v-if="conflicts.length" class="oss-conflicts">
-        <div class="card-title" style="font-size:14px">冲突记录 <span class="sub">{{ conflicts.length }} 条 · 双端同改同一集合时较新者胜，败者已留档 OSS</span></div>
-        <div class="conflict-item" v-for="c in conflicts" :key="c.object + c.at">
-          <div class="ci-main">
-            <b>{{ c.key }}</b>
-            <span class="ci-time">{{ c.at }}</span>
-            <span class="badge" :class="c.winner === 'local' ? 'green' : 'gray'">{{ c.winner === 'local' ? '本地胜' : '云端胜' }}</span>
-          </div>
-          <button class="btn btn-ghost btn-sm" @click="viewConflict(c)"><VIcon name="search" />查看归档</button>
-        </div>
-      </div>
-
-      <div class="oss-tip">
-        <strong>接入准备</strong>：① 在 RAM 控制台新建子账号并仅授予该 Bucket 读写权限；② 在 OSS 控制台为该 Bucket 配置
-        <code>CORS</code> 规则（<code>AllowedOrigin</code> 填工作台域名，<code>AllowedMethod</code> 选 GET/PUT/DELETE/POST/HEAD，<code>AllowedHeader</code> 填 *）。
-        密钥仅保存在本机浏览器，请勿用于多人共享场景。
-      </div>
-    </div>
-
     <!-- 数据管理 -->
     <div class="card set-group">
       <div class="card-title">数据管理 <span class="sub">备份 / 恢复 / 演示数据</span></div>
@@ -429,98 +289,3 @@ onBeforeUnmount(() => layout.setActions([]))
     <input ref="backupInput" type="file" accept=".json,application/json" style="display:none" @change="onImportFile">
   </div>
 </template>
-
-<style scoped>
-.oss-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text3);
-  background: var(--glass-1);
-  border: 1px solid var(--line);
-}
-.oss-tag.on {
-  color: var(--primary);
-  background: var(--primary-l);
-  border-color: var(--primary);
-}
-.oss-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-  margin: 14px 0 4px;
-}
-.oss-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text2);
-}
-.oss-grid input {
-  width: 100%;
-}
-.oss-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 14px;
-  min-height: 24px;
-}
-.oss-msg {
-  font-size: 12.5px;
-  color: var(--positive, #12a150);
-}
-.oss-msg.err {
-  color: var(--red-ink);
-}
-.oss-tip {
-  margin-top: 14px;
-  padding: 11px 14px;
-  border-radius: 12px;
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text3);
-  background: var(--primary-l, rgba(0, 122, 255, 0.06));
-  border: 1px solid var(--line);
-}
-.oss-tip code {
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--glass-1);
-  border: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--strong-text);
-}
-.oss-conflicts {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--line);
-}
-.conflict-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 4px;
-  border-bottom: 1px solid var(--line);
-}
-.conflict-item:last-child { border-bottom: none }
-.ci-main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  min-width: 0;
-}
-.ci-time {
-  font-size: 12px;
-  color: var(--text3);
-}
-</style>

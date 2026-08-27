@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { LS, LS_NOTES, APP_VER, defaultSettings, BUDGET_TIERS } from '../db/constants'
 import { storage, COLLECTIONS, migrateLegacyData } from '../db/storage'
-import { restoreOssIfEnabled } from '../db/ossSync'
 import { seedProjects, seedPoints, seedDevices, seedNotes, seedMeta, seedAllSettings, seedQuotas, patchTemplatesAuto } from '../db/seeds'
 import { uid, todayStr, nowISO, tierName, stamp2 } from '../db/format'
 import {
@@ -41,10 +40,6 @@ export const useAppStore = defineStore('app', () => {
 
   // ---------- UI 状态 ----------
   const ready = ref(false)
-  const online = ref(false)
-  const syncText = ref('离线模式')
-  const lastSyncAt = ref('')
-  const lastSyncSummary = ref('')
   const loading = ref(true)
   const curTab = ref('projects') // projects | database | search | settings
   const curView = ref('list') // list | board | detail | bill
@@ -84,15 +79,9 @@ export const useAppStore = defineStore('app', () => {
   async function init () {
     // 存储迁移：localStorage → IndexedDB（幂等；旧数据搬入 IndexedDB 并释放 localStorage）
     try { await migrateLegacyData() } catch (e) { console.warn('[store] 数据迁移异常', e && e.message) }
-    // 恢复云模式：若之前启用了阿里云 OSS 同步，先把 storage 切回云端适配器再读取数据
-    try { restoreOssIfEnabled() } catch (e) { console.warn('[store] OSS 同步恢复异常', e && e.message) }
     // 首次启动判定：从未初始化过（无版本标记）。注意 localStorage 与 IndexedDB 相互独立、
     // 版本标记可能被单独清除，因此绝不再用「版本过低」触发重建数据（防刷新丢数据）
     const firstLaunch = !lsHas(LS.VER)
-    // 版本感知云同步：先与云端对齐（建立本地 baseVer/dirty、裁决冲突、完成旧数据迁移），
-    // 再读取数据，确保加载到的是「云端权威」对齐后的结果
-    startAutoSync()
-    await syncNow(true)
     projects.value = (await storage.load(COLLECTIONS.projects, [])) || []
     points.value = (await storage.load(COLLECTIONS.points, [])) || []
     devices.value = (await storage.load(COLLECTIONS.devices, [])) || []
@@ -128,9 +117,8 @@ export const useAppStore = defineStore('app', () => {
     devices.value.forEach(d => ensureDeviceChain(d))
     meta.value = ensureBusinessMeta(meta.value)
 
-    // 仅「从未初始化」且「本地/云端均无业务数据」时播种示例。
-    // 非破坏性：用户主动清空后不再恢复；云端模式不播种，避免把示例推送到共享 OSS 覆盖真实数据。
-    if (firstLaunch && isEmptyData() && storage.mode === 'local') {
+    // 仅「从未初始化」且「无任何业务数据」时播种示例（非破坏性：用户主动清空后不再恢复）
+    if (firstLaunch && isEmptyData()) {
       seedDemo()
     }
 
@@ -191,54 +179,6 @@ export const useAppStore = defineStore('app', () => {
   async function saveAll () {
     await persistAll()
     lsSet(LS.VER, APP_VER)
-  }
-
-  // ---------- 版本感知云同步（P1：参照 Notion，云端为主、本地缓存）----------
-  let syncTimer = null
-  /** 开启自动同步：切回前台 + 每 60s 轮询（仅云端模式；本地模式无操作） */
-  function startAutoSync () {
-    if (storage.mode !== 'oss') return
-    const onVisible = () => { if (document.visibilityState === 'visible') syncNow(false) }
-    document.addEventListener('visibilitychange', onVisible)
-    clearInterval(syncTimer)
-    syncTimer = setInterval(() => { if (document.visibilityState === 'visible') syncNow(false) }, 60000)
-  }
-
-  /** 立即执行一轮版本感知同步（拉取 + 裁决 + 推送）；notify=true 时对冲突 toast 提示 */
-  async function syncNow (notify) {
-    if (storage.mode !== 'oss') return
-    try {
-      const r = await storage.syncAll()
-      if (r) {
-        lastSyncAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-        const parts = []
-        if (r.pulled && r.pulled.length) parts.push('拉取 ' + r.pulled.length)
-        if (r.pushed && r.pushed.length) parts.push('推送 ' + r.pushed.length)
-        if (r.conflicts && r.conflicts.length) parts.push('冲突 ' + r.conflicts.length)
-        lastSyncSummary.value = parts.length ? parts.join(' · ') : '已同步'
-        if (notify && r.conflicts && r.conflicts.length) {
-          toast('同步冲突：' + r.conflicts.join('、') + ' 已留档，可在系统配置查看')
-        }
-      }
-    } catch (e) {
-      console.warn('[store] 同步异常', e && e.message)
-    }
-  }
-
-  /** 立即推送本地脏数据到云端（启用/停用同步时保证先落云端） */
-  async function flushSync () {
-    if (storage.mode !== 'oss') return
-    try { await storage.flushNow() } catch (e) { console.warn('[store] 同步推送异常', e && e.message) }
-  }
-
-  /** 读取本机冲突记录列表（P2） */
-  async function listConflicts () {
-    return storage.listConflicts ? await storage.listConflicts() : []
-  }
-
-  /** 读取 OSS 上的冲突归档内容（name 形如 _conflicts/projects-...）（P2） */
-  async function readConflictArchive (name) {
-    return storage.readArchive ? await storage.readArchive(name) : null
   }
 
   // ---------- Toast ----------
@@ -1091,7 +1031,7 @@ export const useAppStore = defineStore('app', () => {
     // 数据
     projects, points, devices, settings, meta, notes, bills, devSort, devBrands,
     // UI 状态
-    ready, online, syncText, lastSyncAt, lastSyncSummary, loading, curTab, curView, curProjId, curSub, projFilterVal,
+    ready, loading, curTab, curView, curProjId, curSub, projFilterVal,
     toastMsg, toastVisible,
     // 查询
     projectById, pointsOfProject, pointsOfSub, devicesOfSub, devById, calcProgress,
@@ -1104,8 +1044,6 @@ export const useAppStore = defineStore('app', () => {
     quoteOfBill,
     // 初始化 / 持久化
     init, saveAll, toast,
-    // 版本感知云同步
-    syncNow, flushSync, listConflicts, readConflictArchive,
     // 项目
     newProject, updateProject, deleteProject, copyProject, setProjectStatus,
     setProjectBudget, projectBudget, setProjectSelection, bulkSelectionByTier, selectionOf, getProjectSelection,

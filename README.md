@@ -5,7 +5,7 @@
 ## 技术栈
 
 - Vue 3（完整版构建，支持运行时模板）/ Vite 5 / Pinia
-- 纯前端、零后端依赖；数据层为**本地优先**（localStorage），已预留云端适配器接口（`src/db/storage.js` 的 `CloudAdapter`），后续可平滑切换云数据库/后端 API
+- 纯前端、零后端依赖；数据层为**纯本地存储**（业务数据存 IndexedDB，UI 小状态存 localStorage），无任何云端/账号依赖
 
 ## 目录结构
 
@@ -15,7 +15,7 @@ src/
   db/                      # 领域层（纯函数，无 DOM 依赖）
     constants.js           # 常量、localStorage 键、预算档位
     seeds.js               # 预置数据（16 子系统/设备字典/示例项目/模板）
-    storage.js             # 存储抽象层（本地 + 云端占位）
+    storage.js             # 存储抽象层（本地 IndexedDB）
     calc.js                # 数量推算 / 清单生成 / 报价 / 项目进度
     format.js              # 通用工具（日期/转义/档位）
     export.js              # 导出模块（最小 XLSX 生成器 / CSV / TSV / 下载）
@@ -40,7 +40,7 @@ npm run preview  # 预览构建产物
 
 ## 数据说明
 
-- 全部数据存于浏览器 localStorage（键名与初版一致，旧数据无缝迁移）
+- 全部数据存于浏览器 IndexedDB（键名与初版一致，旧数据无缝迁移；仅本机可见，无云端/账号）
 - 首次打开自动播种示例数据（2 个项目 + 设备点表）
 - 报价金额默认 0：需要在「数据库 → 设备」维护品牌/型号单价，在「系统配置 → 材料价格」维护材料单价
 

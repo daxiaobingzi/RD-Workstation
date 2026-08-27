@@ -1,6 +1,6 @@
-// ===== 存储抽象层：本地优先，预留云端接口 =====
-// 统一 get/set/remove 接口，本地实现为 localStorage；
-// 后续接入云数据库/后端 API 时，实现同一接口的 CloudAdapter 并切换 storage.mode 即可，业务代码零改动。
+// ===== 存储抽象层：纯本地存储 =====
+// 统一 get/set/remove 接口；数据集合默认存 IndexedDB（容量远超 localStorage），
+// 主题/侧栏折叠等 UI 小状态仍留在 localStorage。
 
 import { LS, LS_NOTES } from './constants'
 
@@ -103,26 +103,6 @@ class IndexedDBAdapter {
   }
 }
 
-/**
- * 云端适配器占位实现：保持接口形状，供后续接入。
- * 接入方式示例：
- *   storage.setAdapter(new CloudAdapter({ apiBase, token }))
- */
-class CloudAdapter {
-  name = 'cloud'
-  constructor (config) { this.config = config || {} }
-  async load (k, fb) {
-    // TODO: 从云端拉取集合数据（如 GET /data?key=xxx）
-    return fb
-  }
-  async save (k, v) {
-    // TODO: 全量或增量推送至云端
-  }
-  async remove (k) {
-    // TODO: 删除云端键
-  }
-}
-
 export const storage = {
   mode: 'local',
   // 默认本地存储 = IndexedDB（容量远超 localStorage；旧数据自动迁移）
@@ -138,16 +118,10 @@ export const storage = {
     return out
   },
   async save (k, v) { await this._adapter.save(k, v) },
-  async remove (k) { await this._adapter.remove(k) },
-  // 可选能力：版本感知同步（OSS 适配器实现；本地/其他适配器无此方法则返回 undefined）
-  async syncAll () { return this._adapter.syncAll ? await this._adapter.syncAll() : undefined },
-  async flushNow () { return this._adapter.flushNow ? await this._adapter.flushNow() : undefined },
-  // 冲突记录与归档读取（P2）
-  async listConflicts () { return this._adapter.listConflicts ? await this._adapter.listConflicts() : [] },
-  async readArchive (name) { return this._adapter.readArchive ? await this._adapter.readArchive(name) : null }
+  async remove (k) { await this._adapter.remove(k) }
 }
 
-export { LocalAdapter, IndexedDBAdapter, CloudAdapter }
+export { LocalAdapter, IndexedDBAdapter }
 
 // ===== 数据集合定义：哪个集合存哪个键 =====
 export const COLLECTIONS = {

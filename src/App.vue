@@ -19,7 +19,7 @@ import SettingsView from './views/SettingsView.vue'
 import { initStyleStudio } from './composables/style'
 
 const store = useAppStore()
-const { curTab, ready, loading, online, syncText, curView, projects, curProjId } = storeToRefs(store)
+const { curTab, ready, loading, curView, projects, curProjId } = storeToRefs(store)
 const paletteOpen = ref(false)
 // 侧边栏折叠状态（跨会话记忆）
 const SB_KEY = 'wb_elv_sidebar'
@@ -167,11 +167,7 @@ onBeforeUnmount(() => {
         </div>
       </nav>
       <div class="side-foot">
-        <div class="sync-state">
-          <span class="dot" :class="{ off: !online }"></span>
-          <span>{{ syncText }}</span>
-        </div>
-        <div class="t-dim">图签栏 · 本地存储 · 预留云端</div>
+        <div class="t-dim">数据存储于本机浏览器（IndexedDB）</div>
       </div>
     </aside>
 
