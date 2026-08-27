@@ -141,7 +141,10 @@ export const storage = {
   async remove (k) { await this._adapter.remove(k) },
   // 可选能力：版本感知同步（OSS 适配器实现；本地/其他适配器无此方法则返回 undefined）
   async syncAll () { return this._adapter.syncAll ? await this._adapter.syncAll() : undefined },
-  async flushNow () { return this._adapter.flushNow ? await this._adapter.flushNow() : undefined }
+  async flushNow () { return this._adapter.flushNow ? await this._adapter.flushNow() : undefined },
+  // 冲突记录与归档读取（P2）
+  async listConflicts () { return this._adapter.listConflicts ? await this._adapter.listConflicts() : [] },
+  async readArchive (name) { return this._adapter.readArchive ? await this._adapter.readArchive(name) : null }
 }
 
 export { LocalAdapter, IndexedDBAdapter, CloudAdapter }

@@ -30,6 +30,7 @@ const localCache = new IndexedDBAdapter()
 // 冲突留档：{prefix}/_conflicts/{key}-{ts}.json（保存败者完整数据，可人工恢复）
 const MANIFEST_OBJ = '_versions'
 const CONFLICT_DIR = '_conflicts'
+const CONFLICT_LOG_KEY = '__conflicts_log'
 const SYNC_STATE_KEY = '__syncstate'
 const DEVICE_KEY = 'wb_elv_device'
 
@@ -199,9 +200,20 @@ export function createOSSAdapter (cfg) {
   async function putManifest (m) { await putObj(MANIFEST_OBJ, m) }
 
   // ---------- 冲突留档（败者完整数据，可人工恢复）----------
+  /** 记录一条冲突到本机日志（供设置页展示；仅保留最近 50 条） */
+  async function logConflict (entry) {
+    try {
+      const list = (await localCache.load(CONFLICT_LOG_KEY, [])) || []
+      list.unshift(entry)
+      if (list.length > 50) list.length = 50
+      await localCache.save(CONFLICT_LOG_KEY, list)
+    } catch (e) {}
+  }
   async function writeConflict (key, loserData, meta) {
     const ts = nowISO().replace(/[:.]/g, '-')
-    await putObj(`${CONFLICT_DIR}/${key}-${ts}`, { key, createdAt: nowISO(), conflict: meta, loser: loserData })
+    const object = `${CONFLICT_DIR}/${key}-${ts}`
+    await putObj(object, { key, createdAt: nowISO(), conflict: meta, loser: loserData })
+    await logConflict({ key, at: nowISO(), winner: meta && meta.winner, object })
   }
 
   // ---------- 同步决策（参照方案 5.4：云端为主、本地缓存）----------
@@ -381,7 +393,17 @@ export function createOSSAdapter (cfg) {
     },
     // 版本感知同步对外接口（store 在 init / 前台 / 轮询 / 手动时调用）
     syncAll,
-    flushNow: pushDirty
+    flushNow: pushDirty,
+    // 冲突记录与归档读取（P2：设置页冲突列表）
+    listConflicts: () => localCache.load(CONFLICT_LOG_KEY, []).then(v => v || []),
+    async readArchive (name) {
+      try {
+        const c = await getClient()
+        const r = await c.get(keyOf(name))
+        const text = decode(r.content)
+        return text ? JSON.parse(text) : null
+      } catch (e) { return null }
+    }
   }
 }
 

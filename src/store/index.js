@@ -43,6 +43,8 @@ export const useAppStore = defineStore('app', () => {
   const ready = ref(false)
   const online = ref(false)
   const syncText = ref('离线模式')
+  const lastSyncAt = ref('')
+  const lastSyncSummary = ref('')
   const loading = ref(true)
   const curTab = ref('projects') // projects | database | search | settings
   const curView = ref('list') // list | board | detail | bill
@@ -207,8 +209,16 @@ export const useAppStore = defineStore('app', () => {
     if (storage.mode !== 'oss') return
     try {
       const r = await storage.syncAll()
-      if (notify && r && r.conflicts && r.conflicts.length) {
-        toast('同步冲突：' + r.conflicts.join('、') + ' 已自动留档，可在云端 _conflicts 查看')
+      if (r) {
+        lastSyncAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+        const parts = []
+        if (r.pulled && r.pulled.length) parts.push('拉取 ' + r.pulled.length)
+        if (r.pushed && r.pushed.length) parts.push('推送 ' + r.pushed.length)
+        if (r.conflicts && r.conflicts.length) parts.push('冲突 ' + r.conflicts.length)
+        lastSyncSummary.value = parts.length ? parts.join(' · ') : '已同步'
+        if (notify && r.conflicts && r.conflicts.length) {
+          toast('同步冲突：' + r.conflicts.join('、') + ' 已留档，可在系统配置查看')
+        }
       }
     } catch (e) {
       console.warn('[store] 同步异常', e && e.message)
@@ -219,6 +229,16 @@ export const useAppStore = defineStore('app', () => {
   async function flushSync () {
     if (storage.mode !== 'oss') return
     try { await storage.flushNow() } catch (e) { console.warn('[store] 同步推送异常', e && e.message) }
+  }
+
+  /** 读取本机冲突记录列表（P2） */
+  async function listConflicts () {
+    return storage.listConflicts ? await storage.listConflicts() : []
+  }
+
+  /** 读取 OSS 上的冲突归档内容（name 形如 _conflicts/projects-...）（P2） */
+  async function readConflictArchive (name) {
+    return storage.readArchive ? await storage.readArchive(name) : null
   }
 
   // ---------- Toast ----------
@@ -1071,7 +1091,7 @@ export const useAppStore = defineStore('app', () => {
     // 数据
     projects, points, devices, settings, meta, notes, bills, devSort, devBrands,
     // UI 状态
-    ready, online, syncText, loading, curTab, curView, curProjId, curSub, projFilterVal,
+    ready, online, syncText, lastSyncAt, lastSyncSummary, loading, curTab, curView, curProjId, curSub, projFilterVal,
     toastMsg, toastVisible,
     // 查询
     projectById, pointsOfProject, pointsOfSub, devicesOfSub, devById, calcProgress,
@@ -1085,7 +1105,7 @@ export const useAppStore = defineStore('app', () => {
     // 初始化 / 持久化
     init, saveAll, toast,
     // 版本感知云同步
-    syncNow, flushSync,
+    syncNow, flushSync, listConflicts, readConflictArchive,
     // 项目
     newProject, updateProject, deleteProject, copyProject, setProjectStatus,
     setProjectBudget, projectBudget, setProjectSelection, bulkSelectionByTier, selectionOf, getProjectSelection,

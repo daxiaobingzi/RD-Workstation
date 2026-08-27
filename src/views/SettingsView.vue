@@ -10,6 +10,7 @@ import VIcon from '../components/ui/VIcon.vue'
 import BrandFormDialog from '../components/dialogs/BrandFormDialog.vue'
 import SubsystemFormDialog from '../components/dialogs/SubsystemFormDialog.vue'
 import QuotaFormDialog from '../components/dialogs/QuotaFormDialog.vue'
+import ConflictViewDialog from '../components/dialogs/ConflictViewDialog.vue'
 
 const store = useAppStore()
 const layout = useLayout()
@@ -114,10 +115,13 @@ async function seedDemo () {
   store.toast('示例数据已恢复')
 }
 
-onMounted(() => layout.setActions([
-  { label: '导出JSON', icon: 'dl', cls: 'ghost', onClick: exportJSON },
-  { label: '导入恢复', icon: 'ul', cls: 'ghost', onClick: importJSON }
-]))
+onMounted(() => {
+  layout.setActions([
+    { label: '导出JSON', icon: 'dl', cls: 'ghost', onClick: exportJSON },
+    { label: '导入恢复', icon: 'ul', cls: 'ghost', onClick: importJSON }
+  ])
+  loadConflicts()
+})
 
 // ---------- 阿里云 OSS 云同步 ----------
 import {
@@ -153,6 +157,7 @@ async function enableOss () {
   enableOssSync(cfg)
   await store.saveAll()
   await store.flushSync() // 版本同步：确保全量数据已推送云端再提示
+  loadConflicts()
   ossEnabled.value = true
   store.syncText = '阿里云 OSS'
   store.online = true
@@ -169,6 +174,21 @@ async function disableOss () {
   store.syncText = '离线模式'
   store.online = false
   ossMsg.value = '已停用：回到本机 IndexedDB 存储（云端对象保留，再次启用会覆盖）'
+}
+
+// ---------- P2：同步状态与冲突记录 ----------
+const conflicts = ref([])
+const syncing = ref(false)
+function loadConflicts () {
+  store.listConflicts().then(list => { conflicts.value = list || [] })
+}
+function viewConflict (c) { openDialog(ConflictViewDialog, { entry: c }) }
+async function doSync () {
+  syncing.value = true
+  await store.syncNow(true)
+  syncing.value = false
+  loadConflicts()
+  store.toast(store.lastSyncSummary ? '同步完成：' + store.lastSyncSummary : '已同步')
 }
 onBeforeUnmount(() => layout.setActions([]))
 </script>
@@ -368,6 +388,28 @@ onBeforeUnmount(() => layout.setActions([]))
         <span class="oss-msg" :class="{ err: /失败|错误|先填写/.test(ossMsg) }">{{ ossMsg || '&nbsp;' }}</span>
       </div>
 
+      <div v-if="ossEnabled" class="kv-row" style="margin-top:6px">
+        <div>
+          <div class="k">最后同步</div>
+          <div class="d">{{ store.lastSyncAt ? store.lastSyncAt + ' · ' + store.lastSyncSummary : '尚未同步（切回前台 / 每 60 秒自动同步）' }}</div>
+        </div>
+        <div class="v">
+          <button class="btn btn-primary btn-sm" :disabled="syncing" @click="doSync"><VIcon name="refresh" />立即同步</button>
+        </div>
+      </div>
+
+      <div v-if="conflicts.length" class="oss-conflicts">
+        <div class="card-title" style="font-size:14px">冲突记录 <span class="sub">{{ conflicts.length }} 条 · 双端同改同一集合时较新者胜，败者已留档 OSS</span></div>
+        <div class="conflict-item" v-for="c in conflicts" :key="c.object + c.at">
+          <div class="ci-main">
+            <b>{{ c.key }}</b>
+            <span class="ci-time">{{ c.at }}</span>
+            <span class="badge" :class="c.winner === 'local' ? 'green' : 'gray'">{{ c.winner === 'local' ? '本地胜' : '云端胜' }}</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" @click="viewConflict(c)"><VIcon name="search" />查看归档</button>
+        </div>
+      </div>
+
       <div class="oss-tip">
         <strong>接入准备</strong>：① 在 RAM 控制台新建子账号并仅授予该 Bucket 读写权限；② 在 OSS 控制台为该 Bucket 配置
         <code>CORS</code> 规则（<code>AllowedOrigin</code> 填工作台域名，<code>AllowedMethod</code> 选 GET/PUT/DELETE/POST/HEAD，<code>AllowedHeader</code> 填 *）。
@@ -455,5 +497,30 @@ onBeforeUnmount(() => layout.setActions([]))
   border: 1px solid var(--line);
   font-size: 12px;
   color: var(--strong-text);
+}
+.oss-conflicts {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.conflict-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.conflict-item:last-child { border-bottom: none }
+.ci-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+.ci-time {
+  font-size: 12px;
+  color: var(--text3);
 }
 </style>
