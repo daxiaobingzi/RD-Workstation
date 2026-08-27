@@ -34,13 +34,27 @@ src/
 ```bash
 npm install
 npm run dev      # 开发服务器 http://localhost:5173
-npm run build    # 生产构建 → dist/
+npm run build    # 生产构建 → dist/（Web / GitHub Pages 版）
 npm run preview  # 预览构建产物
+```
+
+## 桌面离线版（Electron）
+
+桌面版是**本地可安装、完全离线**的应用：加载本机构建产物，无 Service Worker、无任何网络依赖，数据存于应用内 IndexedDB。
+
+```bash
+npm install
+npm run app             # 直接以 Electron 运行（需先 npm run build:desktop）
+npm run dist:desktop    # 构建渲染包并打包当前平台安装程序 → release/
+# 指定平台（在对应系统上执行）：
+npx electron-builder --linux AppImage --publish never   # Linux
+npx electron-builder --win nsis --publish never         # Windows（需在 Windows 上构建）
+npx electron-builder --mac dmg --publish never          # macOS
 ```
 
 ## 数据说明
 
-- 全部数据存于浏览器 IndexedDB（键名与初版一致，旧数据无缝迁移；仅本机可见，无云端/账号）
+- 全部数据存于浏览器/应用内 IndexedDB（键名与初版一致，旧数据无缝迁移；仅本机可见，无云端/账号）
 - 首次打开自动播种示例数据（2 个项目 + 设备点表）
 - 报价金额默认 0：需要在「数据库 → 设备」维护品牌/型号单价，在「系统配置 → 材料价格」维护材料单价
 
