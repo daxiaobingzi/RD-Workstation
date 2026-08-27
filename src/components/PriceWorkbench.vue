@@ -242,7 +242,7 @@ watch(() => props.dbSub, () => { ensureLists(); expanded.value = {} }, { immedia
           <input v-model.trim="v.brand" list="pw-brand-pool" :placeholder="unknownBrands.includes(v.brand) ? '停用品牌：' + v.brand : '品牌'" class="cell brand" @blur="saveBrandToPool(v.brand)">
           <input v-model.trim="v.model" placeholder="型号" class="cell">
           <select v-model="v.tier" class="cell tier"><option v-for="t in BUDGET_TIERS" :key="t.id" :value="t.name">{{ t.name }}</option></select>
-          <input v-model.trim="v.param" :placeholder="v.brand ? '与型号对应' : '参数'" class="cell" :class="{ warn: v.brand && !v.param }">
+          <textarea v-model.trim="v.param" rows="2" :placeholder="v.brand ? '与型号对应' : '参数（多行）'" class="cell param" :class="{ warn: v.brand && !v.param }"></textarea>
           <input v-model.number="v.unitPrice" type="number" min="0" step="0.01" placeholder="单价" class="cell price">
           <div class="rop">
             <button class="del" title="删除该型号" @click="removeRow(g.device.id, i)"><VIcon name="x" /></button>
@@ -299,9 +299,11 @@ watch(() => props.dbSub, () => { ensureLists(); expanded.value = {} }, { immedia
 .pw-empty{padding:14px 16px;color:var(--text3);font-size:12.5px;background:var(--glass-1);border:1px dashed var(--line2);border-radius:8px;margin-bottom:8px}
 .cell.brand{background:var(--blue-bg);border-color:var(--blue-line);color:var(--text)}
 .cell.tier select{width:100%}
+.cell.param{resize:vertical;min-height:34px}
 .cell.price{font-family:var(--mono)}
 .cell.warn{border-color:var(--amber-line)}
 .rop{display:flex;justify-content:center}
 .rop .del{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
 .rop .del:hover{background:var(--red-l);color:var(--red)}
+.pwname .src{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom}
 </style>

@@ -67,23 +67,22 @@ async function delTemplate (id) {
   await store.saveAll()
 }
 
-// ---------- 材料价格 ----------
+// ---------- 材料价格（品牌/型号结构；默认品牌国产、型号国产优质） ----------
 const mpRows = ref([])
 function syncMp () {
-  mpRows.value = Object.keys(settings.value.materialPrices || {}).map(k => ({ name: k, price: settings.value.materialPrices[k] }))
+  mpRows.value = (settings.value.materialPrices || []).map(m => ({ ...m }))
 }
 syncMp()
-function addMp () { mpRows.value.push({ name: '', price: '' }) }
+function addMp () { mpRows.value.push({ id: 'mp_' + Date.now().toString(36), name: '', spec: '', unit: 'm', cat: '管材线缆', brand: '国产', model: '国产优质', price: '' }) }
 function delMp (i) { mpRows.value.splice(i, 1) }
 function saveMp () {
-  const np = {}
-  mpRows.value.forEach(r => {
-    const n = r.name.trim()
-    if (!n) return
-    if (r.price === '' || r.price == null) return
-    np[n] = Number(r.price)
-  })
-  settings.value.materialPrices = np
+  const arr = mpRows.value.map(r => ({
+    id: r.id || 'mp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    name: r.name.trim(), spec: r.spec.trim(), unit: r.unit.trim() || 'm', cat: r.cat || '管材线缆',
+    brand: r.brand.trim() || '国产', model: r.model.trim() || '国产优质',
+    price: r.price === '' || r.price == null ? null : Number(r.price)
+  })).filter(r => r.name)
+  settings.value.materialPrices = arr
   store.saveAll().then(() => { syncMp(); store.toast('材料价格已保存') })
 }
 
@@ -205,12 +204,23 @@ onBeforeUnmount(() => layout.setActions([]))
 
     <!-- 材料价格 -->
     <div class="card set-group">
-      <div class="card-title">材料价格 <span class="sub">用于施工清单材料行报价</span></div>
-      <div v-for="(r, i) in mpRows" :key="i" style="display:flex;gap:8px;margin-bottom:8px">
-        <input v-model.trim="r.name" placeholder="材料名，如：六类网线" style="flex:1;min-width:120px">
-        <input v-model.number="r.price" type="number" min="0" step="0.01" placeholder="单价" style="width:130px">
-        <button class="btn btn-icon btn-sm" @click="delMp(i)" style="color:var(--text3)"><VIcon name="trash" :size="15" /></button>
-      </div>
+      <div class="card-title">材料价格 <span class="sub">与设备「定额材料」联动定价；默认品牌「国产」/型号「国产优质」，可自定义</span></div>
+      <div class="tbl-wrap"><table class="tbl" style="min-width:720px">
+        <thead><tr><th>材料名称</th><th>规格</th><th>单位</th><th>类别</th><th>品牌</th><th>型号</th><th>单价(元)</th><th style="width:40px"></th></tr></thead>
+        <tbody>
+          <tr v-for="(r, i) in mpRows" :key="r.id || i">
+            <td><input v-model.trim="r.name" placeholder="材料名，如：六类网线" style="min-width:110px"></td>
+            <td><input v-model.trim="r.spec" placeholder="规格" style="min-width:90px"></td>
+            <td><input v-model.trim="r.unit" style="width:56px"></td>
+            <td><select v-model="r.cat"><option>管材线缆</option><option>辅材</option></select></td>
+            <td><input v-model.trim="r.brand" placeholder="默认：国产" style="min-width:70px"></td>
+            <td><input v-model.trim="r.model" placeholder="默认：国产优质" style="min-width:90px"></td>
+            <td><input v-model.number="r.price" type="number" min="0" step="0.01" placeholder="单价" style="width:90px"></td>
+            <td><button class="btn btn-icon btn-sm" @click="delMp(i)" style="color:var(--text3)"><VIcon name="trash" :size="15" /></button></td>
+          </tr>
+          <tr v-if="!mpRows.length"><td colspan="8" style="text-align:center;color:var(--text3);padding:18px">暂无材料价格。添加后，设备「定额材料」将自动联动此处的品牌/型号/单价。</td></tr>
+        </tbody>
+      </table></div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn btn-ghost btn-sm" @click="addMp"><VIcon name="plus" />添加行</button>
         <button class="btn btn-primary btn-sm" style="margin-left:auto" @click="saveMp"><VIcon name="save" />保存</button>

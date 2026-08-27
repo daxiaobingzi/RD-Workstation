@@ -3,14 +3,15 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { LS, LS_NOTES, APP_VER, defaultSettings, BUDGET_TIERS } from '../db/constants'
 import { storage, COLLECTIONS, migrateLegacyData } from '../db/storage'
-import { seedProjects, seedPoints, seedDevices, seedNotes, seedMeta, seedAllSettings, seedQuotas, patchTemplatesAuto } from '../db/seeds'
+import { seedProjects, seedPoints, seedDevices, seedNotes, seedMeta, seedAllSettings, seedQuotas, seedMaterialPrices, patchTemplatesAuto } from '../db/seeds'
 import { uid, todayStr, nowISO, tierName, stamp2 } from '../db/format'
 import {
   ensureDesignQuotas, quotaRuleFor, calcRuleQty, ratioSuggestedQty, subTotalFront,
   suggestQtyForDevice, resolveDevice, selectionOf, getProjectSelection, computeBill,
   diffBill, normalizeBillList, newBillEntry, calcProgress,
   buildBillRows, rowsToCSV, rowsToTSV,
-  ensureDeviceChain, deriveChain, chainFormulaText, chainSourceLabel, isChainDevice
+  ensureDeviceChain, deriveChain, chainFormulaText, chainSourceLabel, isChainDevice,
+  normalizeMaterialPrices, findMaterialPrice
 } from '../db/calc'
 import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText, buildBillSheetsBySub } from '../db/export'
 
@@ -102,7 +103,11 @@ export const useAppStore = defineStore('app', () => {
     }
     settings.value.subCategories = settings.value.subCategories && settings.value.subCategories.length
       ? settings.value.subCategories : ['安防', '网络通信', '音视频', '机房管路']
-    if (!settings.value.materialPrices) settings.value.materialPrices = {}
+    if (!settings.value.materialPrices) settings.value.materialPrices = []
+    // 材料价格结构迁移：旧 {名称: 单价} → [{name,spec,unit,cat,brand,model,price}]（默认品牌国产/型号国产优质）
+    settings.value.materialPrices = normalizeMaterialPrices(settings.value.materialPrices)
+    // 材料价格为空时补默认（与示例设备定额对应，保证「定额材料」立即联动有价；可在系统配置删除/修改）
+    if (!settings.value.materialPrices.length) settings.value.materialPrices = seedMaterialPrices()
     if (!settings.value.templates) settings.value.templates = []
     if (!settings.value.designStages) settings.value.designStages = ['方案设计', '初步设计', '施工图设计', '技术交底', '竣工']
     ensureDesignQuotas(settings.value)
@@ -882,11 +887,16 @@ export const useAppStore = defineStore('app', () => {
   function addBuildingType (b) { if (!settings.value.buildingTypes.includes(b)) settings.value.buildingTypes.push(b) }
   function removeBuildingType (b) { settings.value.buildingTypes = settings.value.buildingTypes.filter(x => x !== b) }
 
-  // 材料价格
-  function setMaterialPrice (name, price) {
-    settings.value.materialPrices = settings.value.materialPrices || {}
-    if (price === '' || price == null) delete settings.value.materialPrices[name]
-    else settings.value.materialPrices[name] = Number(price)
+  // 材料价格（数组结构：按 名称+规格+单位 匹配更新；品牌默认国产/型号国产优质）
+  function setMaterialPrice (name, spec, unit, price) {
+    settings.value.materialPrices = settings.value.materialPrices || []
+    const hit = settings.value.materialPrices.find(m => m && m.name === name && (m.spec || '') === (spec || '') && (m.unit || '') === (unit || ''))
+    if (price === '' || price == null) {
+      if (hit) settings.value.materialPrices = settings.value.materialPrices.filter(m => m !== hit)
+      return
+    }
+    if (hit) hit.price = Number(price)
+    else settings.value.materialPrices.push({ id: 'mp_' + Date.now().toString(36), name, spec: spec || '', unit: unit || 'm', cat: '管材线缆', brand: '国产', model: '国产优质', price: Number(price) })
   }
 
   // 设计定额

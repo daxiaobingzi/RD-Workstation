@@ -31,7 +31,7 @@ export function defaultSettings () {
     buildingTypes: [],
     subCategories: [],
     brands: [], // 品牌库
-    materialPrices: {}, // 材料价格 {名称: 单价}
+    materialPrices: [], // 材料价格 [{name,spec,unit,cat,brand,model,price}]，默认品牌国产/型号国产优质
     designQuotas: [], // 设计定额规则
     templates: [], // 业态模板
     designStages: ['方案设计', '初步设计', '施工图设计', '技术交底', '竣工']

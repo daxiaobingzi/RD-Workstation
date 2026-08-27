@@ -5,6 +5,7 @@ import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../../store'
 import { BUDGET_TIERS } from '../../db/constants'
+import { findMaterialPrice } from '../../db/calc'
 import ModalBase from '../ui/ModalBase.vue'
 import VIcon from '../ui/VIcon.vue'
 
@@ -60,7 +61,17 @@ const chainSrcName = computed(() => {
 })
 const brands = ref(JSON.parse(JSON.stringify(store.devBrands[props.device?.id] || [])))
 
-function addQuotaRow () { quotaRows.value.push({ name: '', spec: '', unit: 'm', per: 1, cat: '管材线缆' }) }
+// 材料价格联动：名称/规格/单位 匹配系统配置中的材料价格（默认品牌国产、型号国产优质）
+const mpNames = computed(() => {
+  const list = store.settings.materialPrices || []
+  return Array.isArray(list) ? [...new Set(list.map(m => m.name).filter(Boolean))].sort() : []
+})
+function matPriceOf (m) {
+  const entry = findMaterialPrice(store.settings, m.name, m.spec, m.unit)
+  return entry || null
+}
+
+function addQuotaRow () { quotaRows.value.push({ name: '', spec: '', unit: 'm', per: 1, cat: '管材线缆', mpId: null }) }
 function delQuotaRow (i) { quotaRows.value.splice(i, 1) }
 function addBrandRow () { brands.value.push({ id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), brand: '', model: '', param: '', unitPrice: '', tier: '标准型' }) }
 function delBrandRow (i) { brands.value.splice(i, 1) }
@@ -69,7 +80,10 @@ async function save () {
   const name = f.name.trim()
   if (!name) { store.toast('请填写设备名称'); return }
 
-  const quota = quotaRows.value.map(m => ({ name: m.name.trim(), spec: m.spec.trim(), unit: m.unit.trim() || 'm', per: parseFloat(m.per) || 0, cat: m.cat })).filter(m => m.name)
+  const quota = quotaRows.value.map(m => {
+    const entry = findMaterialPrice(store.settings, m.name.trim(), m.spec.trim(), m.unit.trim() || 'm')
+    return { name: m.name.trim(), spec: m.spec.trim(), unit: m.unit.trim() || 'm', per: parseFloat(m.per) || 0, cat: m.cat, mpId: entry ? entry.id : null }
+  }).filter(m => m.name)
 
   let chainObj = null
   if (chain.enabled && f.category !== '前端设备') {
@@ -125,7 +139,7 @@ async function save () {
   <ModalBase :title="(isNew ? '添加设备' : '编辑设备') + ' · ' + sub" @close="emit('close')">
     <div class="form-grid">
       <div class="fitem"><label>设备名称 *</label><input v-model.trim="f.name" placeholder="如：网络摄像机(枪式)"></div>
-      <div class="fitem"><label>规格型号</label><input v-model.trim="f.spec" placeholder="如：200万像素"></div>
+      <div class="fitem"><label>规格型号</label><textarea v-model.trim="f.spec" rows="2" placeholder="多行文字，如：200万像素&#10;星光级红外50m"></textarea></div>
       <div class="fitem"><label>单位</label><input v-model.trim="f.unit"></div>
       <div class="fitem"><label>类别</label>
         <select v-model="f.category">
@@ -134,24 +148,31 @@ async function save () {
       </div>
     </div>
 
-    <div class="card-title" style="margin-top:8px">单点定额 <span class="sub">每台设备消耗的材料（前端设备填写，用于推算管材线缆/辅材）</span></div>
+    <div class="card-title" style="margin-top:8px">单点定额 <span class="sub">每台设备消耗的材料（前端设备填写）；名称/规格/单位自动联动「系统配置 → 材料价格」</span></div>
     <div class="tbl-wrap">
-      <table class="tbl" style="min-width:560px">
-        <thead><tr><th>材料名称</th><th>规格</th><th>单位</th><th>每点用量</th><th>类别</th><th></th></tr></thead>
+      <table class="tbl" style="min-width:720px">
+        <thead><tr><th>材料名称</th><th>规格</th><th>单位</th><th>每点用量</th><th>类别</th><th>材料价格(元)</th><th></th></tr></thead>
         <tbody>
-          <tr v-if="!quotaRows.length"><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">暂无定额材料</td></tr>
+          <tr v-if="!quotaRows.length"><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">暂无定额材料</td></tr>
           <tr v-for="(m, i) in quotaRows" :key="i">
-            <td><input v-model.trim="m.name" placeholder="材料名" style="min-width:110px"></td>
-            <td><input v-model.trim="m.spec" placeholder="规格" style="min-width:90px"></td>
+            <td><input v-model.trim="m.name" list="mp-names" placeholder="材料名" style="min-width:110px"></td>
+            <td><textarea v-model.trim="m.spec" rows="2" placeholder="规格（多行）" style="min-width:90px"></textarea></td>
             <td><input v-model.trim="m.unit" style="width:56px"></td>
             <td><input v-model.number="m.per" type="number" min="0" step="0.1" style="width:72px"></td>
             <td><select v-model="m.cat"><option>管材线缆</option><option>辅材</option></select></td>
+            <td>
+              <template v-if="matPriceOf(m)">
+                <span class="mp-linked" :title="'品牌 ' + (matPriceOf(m).brand || '') + ' · 型号 ' + (matPriceOf(m).model || '')">¥{{ matPriceOf(m).price ?? '—' }}<span class="mp-bm">{{ matPriceOf(m).brand }} / {{ matPriceOf(m).model }}</span></span>
+              </template>
+              <span v-else class="mp-none" title="系统配置中无对应材料价格，保存后清单将无价">未定价</span>
+            </td>
             <td><button class="btn btn-icon btn-sm del" @click="delQuotaRow(i)" style="color:var(--text3)"><VIcon name="trash" :size="15" /></button></td>
           </tr>
         </tbody>
       </table>
     </div>
     <button class="btn btn-ghost btn-sm" style="margin-top:8px" @click="addQuotaRow"><VIcon name="plus" />添加定额材料</button>
+    <datalist id="mp-names"><option v-for="n in mpNames" :key="n" :value="n">{{ n }}</option></datalist>
 
     <div class="card-title" style="margin-top:14px">品牌与价格 <span class="sub">一行=品牌+型号+配置档次+参数+单价</span></div>
     <div class="hint" style="margin-bottom:8px">与「价格工作台」共用同一份数据：此处保存的信息在价格工作台「{{ sub }}」对应设备分组下同步可见、可继续维护。</div>
@@ -163,7 +184,7 @@ async function save () {
             <td><input v-model.trim="b.brand" style="min-width:90px"></td>
             <td><input v-model.trim="b.model" style="min-width:110px"></td>
             <td><select v-model="b.tier"><option v-for="t in BUDGET_TIERS" :key="t.id" :value="t.name">{{ t.name }}</option></select></td>
-            <td><input v-model.trim="b.param" style="min-width:80px"></td>
+            <td><textarea v-model.trim="b.param" rows="2" placeholder="参数（多行）" style="min-width:80px"></textarea></td>
             <td><input v-model.number="b.unitPrice" type="number" min="0" step="0.01" style="width:96px"></td>
             <td><button class="btn btn-icon btn-sm del" @click="delBrandRow(i)" style="color:var(--text3)"><VIcon name="trash" :size="15" /></button></td>
           </tr>
@@ -263,4 +284,8 @@ async function save () {
 .pick-check{display:flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 6px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pick-check input{width:auto;margin:0}
 .pick-check.on{background:var(--primary-l)}
+.mp-linked{display:inline-flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:12.5px;color:var(--green);cursor:help}
+.mp-linked .mp-bm{font-size:11px;color:var(--text3);font-family:var(--font-body);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mp-none{font-size:12px;color:var(--amber);cursor:help}
+textarea{resize:vertical;min-height:34px}
 </style>

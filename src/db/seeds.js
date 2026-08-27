@@ -127,7 +127,31 @@ export function seedAllSettings () {
   s.subCategories = seedSubCategories()
   s.templates = seedTemplates()
   s.designQuotas = seedQuotas()
+  s.materialPrices = seedMaterialPrices()
   return s
+}
+
+/** 默认材料价格：与设备定额材料对应的常见材料，默认品牌「国产」/型号「国产优质」 */
+export function seedMaterialPrices () {
+  const mk = (name, spec, unit, price, cat) => ({
+    id: 'mp_seed_' + name + '_' + (spec || 'x'),
+    name, spec: spec || '', unit: unit || 'm', cat: cat || '管材线缆',
+    brand: '国产', model: '国产优质', price
+  })
+  return [
+    mk('六类网线', 'CAT6', 'm', 2.8),
+    mk('电源线', 'RVV2*1.0', 'm', 1.6),
+    mk('门禁电源线', 'RVV2*1.5', 'm', 2.0),
+    mk('读卡器线', 'RVV4*0.5', 'm', 2.2),
+    mk('广播线', 'RVV2*1.5', 'm', 1.9),
+    mk('PVC线管', 'DN20', 'm', 3.5),
+    mk('PVC线管', 'DN25', 'm', 4.5),
+    mk('金属线槽', '200*100', 'm', 38),
+    mk('摄像机支架', '壁装', '套', 25, '辅材'),
+    mk('吸顶支架', '', '套', 18, '辅材'),
+    mk('球机支架', '吊装', '套', 45, '辅材'),
+    mk('86底盒', '', '个', 3.2, '辅材')
+  ]
 }
 
 /** 默认设计定额（供旧数据环境补齐） */

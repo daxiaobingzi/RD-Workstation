@@ -179,7 +179,7 @@ function switchMode (m) {
           <tr v-for="(d, idx) in devs" :key="d.id">
             <td><input type="checkbox" :checked="sel.has(d.id)" @change="toggle(d.id)" /></td>
             <td><b>{{ d.name }}</b></td>
-            <td class="src">{{ d.spec || '-' }}</td>
+            <td class="src clamp" :title="d.spec">{{ d.spec || '-' }}</td>
             <td>{{ d.unit }}</td>
             <td><span class="badge" :class="{ 'blue': d.category === '前端设备', 'green': d.category === '后端设备', 'plain': d.category !== '前端设备' && d.category !== '后端设备' }">{{ d.category }}</span></td>
             <td v-html="brandTxt(d)"></td>
@@ -205,4 +205,5 @@ function switchMode (m) {
 .batch-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .sel-count { font-size: 12.5px; color: var(--accent); background: var(--primary-l); padding: 3px 10px; border-radius: 999px; }
 .batch-bar input[type="checkbox"] { width: auto; margin: 0; accent-color: var(--accent); }
+.clamp { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

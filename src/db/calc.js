@@ -2,6 +2,45 @@
 // 全部为纯函数，入参为应用状态（store 的响应式 state 或局部快照），不直接触碰 DOM。
 import { uid, ceil2, round2, tierName, todayStr, stamp2 } from './format'
 
+// ---------- 材料价格（品牌/型号结构） ----------
+/** 规范材料价格：兼容旧 {名称: 单价} 对象格式 → 数组 [{id,name,spec,unit,cat,brand,model,price}] */
+export function normalizeMaterialPrices (mp) {
+  if (Array.isArray(mp)) {
+    return mp.filter(m => m && m.name)
+  }
+  if (mp && typeof mp === 'object') {
+    return Object.keys(mp)
+      .filter(k => mp[k] != null && mp[k] !== '')
+      .map(k => ({
+        id: 'mp_' + k + '_' + Date.now().toString(36),
+        name: k, spec: '', unit: 'm', cat: '管材线缆',
+        brand: '国产', model: '国产优质', price: Number(mp[k])
+      }))
+  }
+  return []
+}
+
+/** 按名称 + 规格 + 单位 匹配材料价格条目（定额材料与材料价格链接的匹配键） */
+export function findMaterialPrice (settings, name, spec, unit) {
+  const list = settings && settings.materialPrices
+  if (!Array.isArray(list)) return null
+  return list.find(m => m && m.name === name &&
+    (spec == null || (m.spec || '') === (spec || '')) &&
+    (unit == null || (m.unit || '') === (unit || ''))) || null
+}
+
+/** 定额材料行 → 对应材料价格条目（优先 mpId 显式链接，其次按名称+规格+单位自动匹配） */
+export function materialPriceOf (settings, quotaRow) {
+  if (!quotaRow) return null
+  const list = settings && settings.materialPrices
+  if (!Array.isArray(list)) return null
+  if (quotaRow.mpId) {
+    const hit = list.find(m => m && m.id === quotaRow.mpId)
+    if (hit) return hit
+  }
+  return findMaterialPrice(settings, quotaRow.name, quotaRow.spec, quotaRow.unit) || null
+}
+
 // ---------- 设计定额 ----------
 export function ensureDesignQuotas (settings) {
   if (!settings.designQuotas) settings.designQuotas = []
@@ -339,14 +378,16 @@ export function computeBill (store, p) {
       dictMissing: !d
     })
   })
-  const mp = store.settings.materialPrices || {}
   Object.keys(mats).forEach(k => {
     const m = mats[k]
-    const pr = mp[m.name] != null ? Number(mp[m.name]) : (mp[m.spec] != null ? Number(mp[m.spec]) : null)
+    const mpEntry = findMaterialPrice(store.settings, m.name, m.spec, m.unit)
+    const pr = mpEntry && mpEntry.price != null && mpEntry.price !== '' ? Number(mpEntry.price) : null
     bill.push({
       cat: m.cat, sub: m.sub, name: m.name, spec: m.spec, unit: m.unit,
       qty: Math.ceil(m.qty), src: m.src.slice(0, 3).join('，') + (m.src.length > 3 ? ' 等' : ''),
-      materialUnitPrice: pr
+      materialUnitPrice: pr,
+      materialBrand: mpEntry ? (mpEntry.brand || '') : '',
+      materialModel: mpEntry ? (mpEntry.model || '') : ''
     })
   })
   return bill
@@ -395,8 +436,8 @@ export function calcQuote (state, p, bill) {
     } else {
       let pr = r.materialUnitPrice != null && r.materialUnitPrice !== '' ? Number(r.materialUnitPrice) : null
       if (pr == null) {
-        const mp = state.settings.materialPrices || {}
-        pr = mp[r.name] != null ? Number(mp[r.name]) : (mp[r.spec] != null ? Number(mp[r.spec]) : null)
+        const mpEntry = findMaterialPrice(state.settings, r.name, r.spec, r.unit)
+        pr = mpEntry && mpEntry.price != null && mpEntry.price !== '' ? Number(mpEntry.price) : null
       }
       if (pr != null) {
         const amt2 = round2(pr * r.qty)
@@ -451,6 +492,11 @@ export function buildBillRows (state, p, rows) {
           total = price !== '' ? round2(Number(price) * r.qty) : ''
         }
       }
+    } else {
+      // 材料行：品牌/型号来自链接的材料价格，价格取材料单价
+      brand = r.materialBrand || ''; model = r.materialModel || ''
+      price = r.materialUnitPrice != null && r.materialUnitPrice !== '' ? r.materialUnitPrice : ''
+      total = price !== '' ? round2(Number(price) * r.qty) : ''
     }
     out.push([r.cat, r.name, r.spec || '', r.unit, r.qty, brand, model, tier, param, price, total, source, r.src])
   })
