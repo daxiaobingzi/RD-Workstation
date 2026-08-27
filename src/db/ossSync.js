@@ -4,7 +4,7 @@
 //   拉取 = GetObject，推送 = PutObject，删除 = DeleteObject。
 // 认证用官方 ali-oss SDK（浏览器版），配置（Bucket/Region/AK/SK）为本机浏览器私有设置，
 // 不落入业务集合，避免「同步配置自身被同步」的自举问题。
-import OSS from 'ali-oss'
+// ali-oss 采用动态导入：独立 chunk 按需加载，避免拖慢首屏。
 import { storage } from './storage'
 import { enableCloudSync, disableCloudSync } from './cloudSync'
 
@@ -34,8 +34,14 @@ export function isOssConfigValid (cfg) {
 }
 
 // ---------- 客户端构建 ----------
-export function buildOssClient (cfg) {
+let _OSS = null
+async function ossMod () {
+  if (!_OSS) _OSS = await import('ali-oss')
+  return _OSS.default
+}
+export async function buildOssClient (cfg) {
   cfg = cfg || {}
+  const OSS = await ossMod()
   return new OSS({
     region: cfg.region,
     bucket: cfg.bucket,
@@ -52,7 +58,7 @@ export function buildOssClient (cfg) {
 export async function testOssConnection (cfg) {
   if (!isOssConfigValid(cfg)) return { ok: false, message: '请先填写 Region、Bucket 与 AccessKey' }
   try {
-    const client = buildOssClient(cfg)
+    const client = await buildOssClient(cfg)
     const t0 = Date.now()
     // 列出 1 个对象即可验证 AK/权限/网络/CORS
     await client.list({ 'max-keys': 1 })
