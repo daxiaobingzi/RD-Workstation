@@ -72,7 +72,12 @@ export async function testOssConnection (cfg) {
 
 // ---------- 云同步适配器（与 storage 的 CloudAdapter 接口形状一致）----------
 export function createOSSAdapter (cfg) {
-  const client = buildOssClient(cfg)
+  // 懒加载构造：首次读写/删除时才真正加载 ali-oss 并创建客户端
+  let _client = null
+  const getClient = async () => {
+    if (!_client) _client = await buildOssClient(cfg)
+    return _client
+  }
   const prefix = String(cfg.prefix || '').replace(/^\/+|\/+$/g, '')
   const keyOf = k => (prefix ? `${prefix}/${k}.json` : `${k}.json`)
   const decode = content => {
@@ -84,8 +89,9 @@ export function createOSSAdapter (cfg) {
   return {
     name: 'oss',
     async load (k, fb) {
-      if (!OSS_SYNC_KEYS.includes(k) || !client) return fb
+      if (!OSS_SYNC_KEYS.includes(k)) return fb
       try {
+        const client = await getClient()
         const r = await client.get(keyOf(k))
         if (!r || r.status === 404 || r.content === undefined || r.content === null) return fb
         const text = decode(r.content)
@@ -98,16 +104,18 @@ export function createOSSAdapter (cfg) {
       }
     },
     async save (k, v) {
-      if (!OSS_SYNC_KEYS.includes(k) || !client) return
+      if (!OSS_SYNC_KEYS.includes(k)) return
       try {
+        const client = await getClient()
         await client.put(keyOf(k), JSON.stringify(v), { contentType: 'application/json; charset=utf-8' })
       } catch (e) {
         console.warn('[oss-sync] 推送失败', k, e && e.message)
       }
     },
     async remove (k) {
-      if (!OSS_SYNC_KEYS.includes(k) || !client) return
+      if (!OSS_SYNC_KEYS.includes(k)) return
       try {
+        const client = await getClient()
         await client.delete(keyOf(k))
       } catch (e) {
         console.warn('[oss-sync] 删除失败', k, e && e.message)
