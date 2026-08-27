@@ -79,9 +79,10 @@ export function enableCloudSync (cfg) {
   storage.setAdapter(createCloudAdapter(cfg))
 }
 
-/** 回到纯本地模式 */
-export function disableCloudSync () {
-  storage.setAdapter(new ((await import('./storage')).LocalAdapter ? ... : Object)())
+/** 回到纯本地模式（IndexedDB 默认存储） */
+export async function disableCloudSync () {
+  const { IndexedDBAdapter } = await import('./storage')
+  storage.setAdapter(new IndexedDBAdapter())
 }
 
 // 提供给 UI 探测当前是否云端模式

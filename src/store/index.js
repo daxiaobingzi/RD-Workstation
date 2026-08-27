@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { LS, LS_NOTES, APP_VER, defaultSettings, BUDGET_TIERS } from '../db/constants'
-import { storage, COLLECTIONS } from '../db/storage'
+import { storage, COLLECTIONS, migrateLegacyData } from '../db/storage'
 import { seedProjects, seedPoints, seedDevices, seedNotes, seedMeta, seedAllSettings, seedQuotas, patchTemplatesAuto } from '../db/seeds'
 import { uid, todayStr, nowISO, tierName, stamp2 } from '../db/format'
 import {
@@ -97,6 +97,8 @@ export const useAppStore = defineStore('app', () => {
       resetDemoData()
       lsSet(LS.VER, APP_VER)
     }
+    // 存储迁移：localStorage → IndexedDB（幂等；旧数据搬入 IndexedDB 并释放 localStorage）
+    try { await migrateLegacyData() } catch (e) { console.warn('[store] 数据迁移异常', e && e.message) }
     projects.value = (await storage.load(COLLECTIONS.projects, [])) || []
     points.value = (await storage.load(COLLECTIONS.points, [])) || []
     devices.value = (await storage.load(COLLECTIONS.devices, [])) || []

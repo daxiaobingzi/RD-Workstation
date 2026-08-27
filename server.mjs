@@ -96,7 +96,8 @@ async function serve (abs, url, res) {
 async function send (filePath, res) {
   const buf = await readFile(filePath)
   const mime = MIME[extname(filePath).toLowerCase()] || 'application/octet-stream'
-  const headers = { 'Content-Type': mime, 'Cache-Control': 'no-cache' }
+  // HTML 强制 no-store，杜绝浏览器/网关缓存旧版本（避免 PWA/更新后加载旧资源）
+  const headers = { 'Content-Type': mime, 'Cache-Control': filePath.endsWith('.html') ? 'no-store' : 'no-cache' }
   // 常见文本资源 gzip 压缩
   if (mime.startsWith('text/') || extname(filePath) === '.json' || extname(filePath) === '.svg') {
     headers['Content-Encoding'] = 'gzip'
