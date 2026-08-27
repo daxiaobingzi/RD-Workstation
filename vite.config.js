@@ -42,6 +42,8 @@ export default defineConfig({
   },
   server: {
     host: true,
-    port: 5173
+    port: 5173,
+    // 允许局域网 IP / 预览代理等非 localhost Host 访问（修复手机/平板通过内网IP打开时 403）
+    allowedHosts: true
   }
 })
