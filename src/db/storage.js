@@ -84,7 +84,10 @@ class IndexedDBAdapter {
   }
   async save (k, v) {
     try {
-      await idbTx('readwrite', s => s.put(v, k))
+      // 关键：Vue reactive Proxy 无法被 IndexedDB 结构化克隆（localStorage 走 JSON 可绕过），
+      // 统一先转纯 JSON 数据再落库，否则每次写入都会 DataCloneError 并回退 localStorage。
+      const plain = JSON.parse(JSON.stringify(v))
+      await idbTx('readwrite', s => s.put(plain, k))
     } catch (e) {
       console.warn('[storage] IndexedDB 写入失败，回退 localStorage', e && e.message)
       lsSet(k, v)
