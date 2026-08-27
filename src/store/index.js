@@ -10,7 +10,7 @@ import {
   suggestQtyForDevice, resolveDevice, selectionOf, getProjectSelection, computeBill,
   diffBill, normalizeBillList, newBillEntry, calcProgress,
   buildBillRows, rowsToCSV, rowsToTSV,
-  ensureDeviceChain, deriveChain, chainFormulaText, chainSourceLabel, isChainDevice,
+  ensureDeviceChain, deriveChain, deriveChainQty, chainFormulaText, chainSourceLabel, isChainDevice,
   normalizeMaterialPrices, findMaterialPrice
 } from '../db/calc'
 import { buildXlsx, buildCsvBlob, buildTxtBlob, downloadBlob, copyText, buildBillSheetsBySub } from '../db/export'
@@ -705,12 +705,20 @@ export const useAppStore = defineStore('app', () => {
     const existing = {}
     pointsOfSub(p.id, sub).forEach(x => { existing[x['设备ID'] || x.设备类型] = x })
     const devs = devicesOfSub(sub).filter(d => d.category === '前端设备' || d.category === '后端设备')
+    // 链式设备数量由统一推导引擎一次算出（含依赖顺序与来源校验）
+    const chainQty = {}
+    const chain = deriveChainQty(devices.value, points.value, p, sub)
+    chain.rows.forEach(r => { if (r.qty != null) chainQty[r.device.id] = r.qty })
     const rows = devs.map(d => {
       const s = suggestQtyForDevice({
         settings: settings.value, points: points.value, devices: devices.value
       }, p, d, sub)
       const cur = existing[d.id] ? Number(existing[d.id].数量) || 0 : 0
-      if (s.qty != null) return { device: d, current: cur, suggested: s.qty, rule: s.rule }
+      let qty = s.qty
+      let rule = s.rule
+      // 无设计定额的链式设备：取推导链结果
+      if (qty == null && chainQty[d.id] != null) { qty = chainQty[d.id]; rule = { method: '链式' } }
+      if (qty != null) return { device: d, current: cur, suggested: qty, rule }
       return null
     }).filter(Boolean)
     return rows

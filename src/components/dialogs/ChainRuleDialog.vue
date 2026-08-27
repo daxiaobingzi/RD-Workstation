@@ -7,7 +7,7 @@ import { useAppStore } from '../../store'
 import { BUDGET_TIERS } from '../../db/constants'
 import ModalBase from '../ui/ModalBase.vue'
 import VIcon from '../ui/VIcon.vue'
-import { ensureDeviceChain, chainSourceIds } from '../../db/calc'
+import { ensureDeviceChain, chainSourceIds, buildChainObj } from '../../db/calc'
 
 const props = defineProps({
   device: { type: Object, default: null }
@@ -72,21 +72,12 @@ async function save () {
   const d = props.device
   let chainObj = null
   if (f.enabled) {
-    if (f.mode === 'fixed') {
-      chainObj = { mode: 'fixed', capacity: Math.max(1, parseInt(f.capacity) || 1) }
-    } else {
-      chainObj = {
-        mode: f.mode === 'mul' ? 'mul' : 'carry',
-        capacity: Math.max(1, parseInt(f.capacity) || 1),
-        source: f.srcKind === 'multi' && f.sources.length ? 'multi' : 'front',
-        sources: f.srcKind === 'multi' ? f.sources.slice() : [],
-        factor: parseFloat(f.factor) || 1,
-        reserve: parseInt(f.reserve) || 0,
-        round: f.round || 'ceil'
-      }
-    }
+    chainObj = buildChainObj({
+      mode: f.mode, capacity: f.capacity, srcKind: f.srcKind,
+      sources: f.sources, factor: f.factor, reserve: f.reserve, round: f.round
+    })
   }
-  store.saveDevice(d, { chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: chainObj.source && chainObj.source !== 'front' ? '*' : '*' } : null })
+  store.saveDevice(d, { chain: chainObj, ratio: chainObj ? { type: chainObj.mode === 'fixed' ? 'fixed' : 'ratio', per: chainObj.capacity, qty: chainObj.mode === 'fixed' ? chainObj.capacity : undefined, target: '*' } : null })
   await store.saveAll()
   emit('close')
   store.toast(`「${d.name}」链规则已保存，存于设备字典，所有项目自动生效`)

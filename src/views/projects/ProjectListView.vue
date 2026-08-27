@@ -1,18 +1,27 @@
 <script setup>
-// 项目列表：统计卡片 + 状态筛选 + 项目卡片（按预计结束日期升序）
+// 项目轨道 · Notion 风格数据表（表格/看板/列表 三视图 + 行内编辑 + 排序筛选搜索）
 import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../../store'
-import { isOverdue, daysFrom, fmtNum } from '../../db/format'
+import { isOverdue } from '../../db/format'
+import { PROJECT_STATUSES } from '../../db/constants'
 import { useLayout } from '../../composables/layout'
 import VIcon from '../../components/ui/VIcon.vue'
+import NotionTable from '../../components/notion/NotionTable.vue'
 import ProjectFormDialog from '../../components/dialogs/ProjectFormDialog.vue'
 import BootstrapProjectDialog from '../../components/dialogs/BootstrapProjectDialog.vue'
-import { openDialog, confirmBox, promptBox } from '../../composables/ui'
+import { openDialog, confirmBox } from '../../composables/ui'
 
 const store = useAppStore()
-const { projects, points, bills, notes: notesRef, projFilterVal, settings } = storeToRefs(store)
+const { projects, points, bills, notes: notesRef, settings } = storeToRefs(store)
 const layout = useLayout()
+
+// 进度：存值优先，否则按项目进度模型计算
+function progressOf (p) {
+  if (p.进度 != null && p.进度 !== '') return Number(p.进度) || 0
+  if (p.状态 === '已完成' || p.状态 === '已归档') return 100
+  return store.calcProgress({ points: points.value, bills: bills.value, notes: notesRef.value }, { ...p })
+}
 
 const stats = computed(() => {
   const ps = projects.value
@@ -27,52 +36,32 @@ const stats = computed(() => {
   }
 })
 
-const list = computed(() => {
-  const f = projFilterVal.value
-  return projects.value.slice()
-    .sort((a, b) => {
-      const ad = a.预计结束日期 || ''
-      const bd = b.预计结束日期 || ''
-      if (!ad && !bd) return 0
-      if (!ad) return 1
-      if (!bd) return -1
-      return ad < bd ? -1 : ad > bd ? 1 : 0
-    })
-    .filter(p => {
-      if (f === '__overdue') return isOverdue(p)
-      if (f === '__all') return true
-      if (f === '已出清单') return p.清单状态 === '已生成' || p.状态 === '已出清单'
-      return p.状态 === f
-    })
-})
+function optsOf (base, field) {
+  return [...new Set([...(base || []), ...projects.value.map(p => p[field]).filter(Boolean)])]
+}
+const P_COLS = [
+  { key: '项目名称', label: '项目名称', type: 'text', sortable: true, width: '200px' },
+  { key: '项目编号', label: '编号', type: 'text', sortable: true, width: '110px' },
+  { key: '建筑类型', label: '建筑类型', type: 'single', options: optsOf(settings.value.buildingTypes, '建筑类型'), sortable: true, width: '120px' },
+  { key: '客户', label: '客户', type: 'text', sortable: true, width: '130px' },
+  { key: '建筑面积', label: '面积(㎡)', type: 'number', sortable: true, width: '96px' },
+  { key: '设计阶段', label: '设计阶段', type: 'single', options: settings.value.designStages, sortable: true, width: '120px' },
+  { key: '状态', label: '状态', type: 'single', options: PROJECT_STATUSES, sortable: true, width: '104px' },
+  { key: '负责人', label: '负责人', type: 'person', sortable: true, width: '104px' },
+  { key: '开始日期', label: '开始', type: 'date', sortable: true, width: '118px' },
+  { key: '预计结束日期', label: '预计结束', type: 'date', sortable: true, width: '118px' },
+  { key: '重点', label: '重点', type: 'check', sortable: true, width: '70px' },
+  { key: '进度', label: '进度', type: 'progress', sortable: true, width: '150px', fmt: p => (p.进度 != null && p.进度 !== '' ? p.进度 : progressOf(p)) },
+  { key: '备注', label: '备注', type: 'longtext', width: '150px' }
+]
 
-function progressOf (p) {
-  if (p.状态 === '已完成' || p.状态 === '已归档') return 100
-  return store.calcProgress({ points: points.value, bills: bills.value, notes: notesRef.value }, { ...p })
+// 编辑后自动落盘（防抖）
+let saveTimer = null
+function onCommit () {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => { store.saveAll() }, 400)
 }
-function progColor (p) {
-  if (p.状态 === '已完成' || p.状态 === '已归档') return 'var(--green)'
-  if (p.清单状态 === '已生成' || p.状态 === '校核中') return 'var(--primary)'
-  return 'var(--amber)'
-}
-function badgeCls (s) {
-  return { '设计中': 'blue', '校核中': 'amber', '已出清单': 'green', '已完成': 'gray' }[s] || 'plain'
-}
-
-function openProject (id) {
-  store.curProjId = id
-  store.curView = 'detail'
-}
-function newProject () {
-  openDialog(ProjectFormDialog, { newProject: true })
-}
-function bootstrapProject () {
-  openDialog(BootstrapProjectDialog, {})
-}
-function board () { store.curView = 'board' }
-
-async function delProject (e, p) {
-  e.stopPropagation()
+async function onDel (p) {
   const ptN = points.value.filter(x => x.项目ID === p.id).length
   const blN = (bills.value[p.id] || []).length
   const ok = await confirmBox(
@@ -83,26 +72,11 @@ async function delProject (e, p) {
   await store.saveAll()
   store.toast('项目已删除')
 }
-
-async function copyProject (e, id) {
-  e.stopPropagation()
-  const np = store.copyProject(id)
-  await store.saveAll()
-  store.toast(`已复制为独立新项目「${np.项目名称}」`)
-}
-
-async function cloneScaled (e, p) {
-  e.stopPropagation()
-  const nm = await promptBox('新项目名称：', p.项目名称 + '（二期）', '克隆并按面积缩放', '克隆')
-  if (nm == null || !nm.trim()) return
-  const area = await promptBox('新项目建筑面积 (㎡)：', p.建筑面积 || '', '克隆并按面积缩放', '确定')
-  if (area == null) return
-  const np = store.cloneScaledProject(p.id, { 项目名称: nm.trim(), 建筑面积: parseFloat(area) || 0, scaleBy: 'area' })
-  await store.saveAll()
-  store.toast(`已克隆为「${np.项目名称}」（点按面积比缩放，请核对）`)
-  store.curProjId = np.id
-  store.curView = 'detail'
-}
+function onOpen (p) { store.curProjId = p.id; store.curView = 'detail' }
+function onAdd () { openDialog(ProjectFormDialog, { newProject: true }) }
+function newProject () { openDialog(ProjectFormDialog, { newProject: true }) }
+function bootstrapProject () { openDialog(BootstrapProjectDialog, {}) }
+function board () { store.curView = 'board' }
 
 onMounted(() => layout.setActions([
   { label: '看板', icon: 'list', cls: 'ghost', onClick: board },
@@ -132,57 +106,23 @@ watch(() => store.curTab, () => { if (store.curTab !== 'projects') layout.setAct
       </div>
     </div>
 
-    <!-- 状态筛选 -->
-    <div class="kv-row" style="margin:0 0 12px">
-      <div class="k">按状态筛选</div>
-      <div><select v-model="store.projFilterVal" style="min-width:200px">
-        <option value="__all">全部项目</option>
-        <option v-for="s in ['设计中','校核中','已出清单','已完成','已归档']" :key="s" :value="s">{{ s }}</option>
-        <option value="__overdue">已超期（预计结束已过）</option>
-      </select></div>
-    </div>
-
-    <!-- 项目卡片 -->
-    <div v-if="list.length" class="grid">
-      <div v-for="p in list" :key="p.id" class="proj-card" :class="{ overdue: isOverdue(p) }" @click="openProject(p.id)">
-        <div class="phead">
-          <div>
-            <div class="pname">{{ p.项目名称 }}</div>
-            <div class="pmeta">{{ p.项目编号 }} · {{ p.建筑类型 || '未分类' }}</div>
-          </div>
-          <span class="badge" :class="badgeCls(p.状态)">{{ p.状态 || '-' }}</span>
-        </div>
-        <div class="pmeta">
-          <VIcon name="building" :size="13" style="vertical-align:-2px" />
-          {{ p.客户 || '-' }} · {{ p.项目地址 || '-' }}
-        </div>
-        <div class="pfoot">
-          <span>{{ p.设计阶段 || '-' }}</span>
-          <span>预计结束 {{ p.预计结束日期 || '-' }}</span>
-          <span style="margin-left:auto;display:flex;gap:4px">
-            <button class="btn btn-icon btn-sm" title="克隆并按面积缩放" @click="cloneScaled($event, p)">
-              <VIcon name="copy" :size="15" />
-            </button>
-          </span>
-        </div>
-        <div class="prog">
-          <div class="prog-bar"><div class="prog-fill" :style="{ width: progressOf(p) + '%', background: progColor(p) }"></div></div>
-          <div class="prog-meta"><span>{{ p.状态 || '-' }}</span><span>{{ progressOf(p) }}%</span></div>
-        </div>
-        <div v-if="isOverdue(p)" class="today-item" style="padding:8px 0 0;border:none">
-          <span class="badge red"><VIcon name="alert" />已超预计结束 {{ -daysFrom(p.预计结束日期) }} 天</span>
-        </div>
-      </div>
-    </div>
+    <!-- Notion 数据表：表格/看板/列表 -->
+    <NotionTable
+      :columns="P_COLS"
+      :rows="projects"
+      group-by="状态"
+      @commit="onCommit"
+      @open="onOpen"
+      @del="onDel"
+      @add="onAdd"
+    />
 
     <!-- 空状态 -->
-    <div v-else class="card" style="text-align:center;padding:44px 40px">
+    <div v-if="!projects.length" class="card" style="text-align:center;padding:44px 40px;margin-top:12px">
       <div style="display:inline-flex;width:52px;height:52px;border-radius:14px;background:var(--primary-l);color:var(--primary);align-items:center;justify-content:center;margin-bottom:12px">
         <VIcon name="folder" :size="24" />
       </div>
-      <div style="font-weight:600;font-size:15px;margin-bottom:4px">
-        {{ projects.length ? '没有符合条件的项目' : '还没有项目' }}
-      </div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:4px">还没有项目</div>
       <div style="font-size:13px;color:var(--text3)">点击右上角「新建项目」，开始第一个弱电智能化设计</div>
     </div>
   </div>

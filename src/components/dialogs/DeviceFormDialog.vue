@@ -5,7 +5,7 @@ import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../../store'
 import { BUDGET_TIERS } from '../../db/constants'
-import { findMaterialPrice } from '../../db/calc'
+import { findMaterialPrice, buildChainObj } from '../../db/calc'
 import ModalBase from '../ui/ModalBase.vue'
 import VIcon from '../ui/VIcon.vue'
 
@@ -87,19 +87,10 @@ async function save () {
 
   let chainObj = null
   if (chain.enabled && f.category !== '前端设备') {
-    if (chain.mode === 'fixed') {
-      chainObj = { mode: 'fixed', capacity: Math.max(1, parseInt(chain.capacity) || 1) }
-    } else {
-      chainObj = {
-        mode: chain.mode === 'mul' ? 'mul' : 'carry',
-        capacity: Math.max(1, parseInt(chain.capacity) || 1),
-        source: chain.srcKind === 'multi' && chain.sources.length ? 'multi' : 'front',
-        sources: chain.srcKind === 'multi' ? chain.sources.slice() : [],
-        factor: parseFloat(chain.factor) || 1,
-        reserve: parseInt(chain.reserve) || 0,
-        round: chain.round || 'ceil'
-      }
-    }
+    chainObj = buildChainObj({
+      mode: chain.mode, capacity: chain.capacity, srcKind: chain.srcKind,
+      sources: chain.sources, factor: chain.factor, reserve: chain.reserve, round: chain.round
+    })
   }
 
   const ratioTarget = '*'

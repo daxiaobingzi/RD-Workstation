@@ -8,7 +8,7 @@ import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../store'
 import { openDialog, confirmBox } from '../composables/ui'
-import { ensureDeviceChain, chainFormulaText, chainSourceIds } from '../db/calc'
+import { ensureDeviceChain, deriveChainQty } from '../db/calc'
 import VIcon from './ui/VIcon.vue'
 import ChainRuleDialog from './dialogs/ChainRuleDialog.vue'
 
@@ -26,8 +26,6 @@ const draftQty = ref({}) // deviceId -> qty 草稿
 
 const frontDevs = computed(() =>
   devices.value.filter(d => d.subsystem === props.sub && d.status !== '归档' && d.category === '前端设备'))
-const backDevs = computed(() =>
-  devices.value.filter(d => d.subsystem === props.sub && d.status !== '归档' && d.category === '后端设备'))
 
 // ---- 以本项目点表为准的前端设备行（含未匹配字典告警）----
 const projPointRows = computed(() => points.value.filter(x => x.项目ID === props.project?.id && x.子系统 === props.sub))
@@ -66,87 +64,36 @@ function frontTotalDraft () {
   return tot
 }
 
-// ---- 承载链：手写推导（支持任意承接来源 + 草稿模拟点位），顺序按依赖拓扑 ---- 
+// ---- 承载链：统一推导引擎（拓扑序计算，顺序无关；支持草稿模拟点位）----
 const chainRows = computed(() => {
-  const frontTotal = frontTotalDraft()
-  const qtyById = {}
-  const rows = []
-  // 前端：点表驱动（含未匹配字典告警与草稿）
-  frontRowList.value.forEach(r => {
-    if (r.device) {
-      const q = frontQtyOf(r.device.id)
-      qtyById[r.device.id] = q
-      rows.push({ device: r.device, qty: q, base: '#', label: '点位', price: priceOf(r.device), missing: false, rawName: '' })
-    } else {
-      rows.push({ device: null, rawName: r.rawName, qty: r.qty, label: '点位', price: null, missing: true })
-    }
+  const override = {}
+  Object.keys(draftQty.value).forEach(id => { override[id] = draftQty.value[id] })
+  const { rows } = deriveChainQty(devices.value, points.value, props.project, props.sub, {
+    frontQtyOverride: override,
+    frontTotalOverride: frontTotalDraft()
   })
-
-  // 后端仅在"有规则"或"点表已填数量"时展示（避免空项目列出一堆字典设备）
-  const shownBack = backDevs.value.filter(d => {
+  const inPoints = new Set()
+  projPointRows.value.forEach(x => { if (x['设备ID']) inPoints.add(x['设备ID']) })
+  const draftIds = new Set(Object.keys(draftQty.value))
+  const out = []
+  rows.forEach(r => {
+    const d = r.device
+    if (d.category === '前端设备') {
+      // 仅展示点表有数量或有草稿的前端设备
+      if (!(r.qty > 0) && !draftIds.has(d.id) && !inPoints.has(d.id)) return
+      out.push({ ...r, label: '点位', price: priceOf(d), missing: false })
+      return
+    }
+    // 后端：仅展示有规则或点表有数量
     const c = ensureDeviceChain(d)
-    if (c) return true
-    return projPointRows.value.some(x => x['设备ID'] === d.id || x.设备类型 === d.name)
+    const hasPoints = projPointRows.value.some(x => x['设备ID'] === d.id || x.设备类型 === d.name)
+    if (!c && !hasPoints) return
+    const label = r.warn ? '' : (r.sourceLabel === '手填' ? (r.qty ? '数量手填' : '数量手填（无规则）') : (r.sourceLabel || '数量手填（无规则）'))
+    out.push({ ...r, label, price: priceOf(d), missing: false })
   })
-
-  // 按依赖顺序解析后端链（硬盘承接 NVR → NVR 先算；循环兜底按原序）
-  const backOrder = []
-  const done = {}
-  const pend = shownBack.slice()
-  let guard = 0
-  while (pend.length && guard++ < 60) {
-    let progressed = false
-    for (let i = pend.length - 1; i >= 0; i--) {
-      const dv = pend[i]
-      const c = ensureDeviceChain(dv)
-      const needs = c ? chainSourceIds(c) : []
-      const unready = needs.filter(nid => qtyById[nid] === undefined)
-      if (unready.length) continue // 依赖未就绪
-      pend.splice(i, 1)
-      backOrder.push(dv)
-      done[dv.id] = true
-      progressed = true
-    }
-    if (!progressed) { backOrder.push(...pend); pend.length = 0 }
-  }
-
-  backOrder.forEach(d => {
-    const c = ensureDeviceChain(d) || null
-    if (!c) {
-      // 无规则：若点表有手填数量则展示，否则跳过后端循环里仍可见
-      const manualQty = projPointRows.value.filter(x => x['设备ID'] === d.id || x.设备类型 === d.name).reduce((a, x) => a + (Number(x.数量) || 0), 0)
-      qtyById[d.id] = manualQty
-      rows.push({ device: d, qty: manualQty || null, base: 0, label: manualQty ? '数量手填' : '数量手填（无规则）', formula: '', srcName: '', price: priceOf(d) })
-      return
-    }
-    if (c.mode === 'fixed') {
-      const q = c.capacity
-      qtyById[d.id] = q
-      rows.push({ device: d, qty: q, base: q, label: '固定值', formula: '固定 ' + q, srcName: '固定值', price: priceOf(d) })
-      return
-    }
-    // 多来源求和 / 前端合计 / 单设备
-    const ids = chainSourceIds(c)
-    let base = 0
-    let srcName = ''
-    if (!ids.length) { base = frontTotal; srcName = '承接 前端合计' }
-    else {
-      ids.forEach(id => { base += qtyById[id] || 0 })
-      const names = ids.map(id => { const s = devices.value.find(x => x.id === id); return s ? s.name : '?' })
-      srcName = '承接 ' + names.join('+')
-    }
-    let q = 0
-    if (c.mode === 'mul') q = Math.round(base * c.capacity * (c.factor || 1))
-    else {
-      let raw = base / c.capacity * (c.factor || 1)
-      q = c.round === 'floor' ? Math.floor(raw) : Math.ceil(raw)
-      q += c.reserve
-    }
-    q = Math.max(0, q)
-    qtyById[d.id] = q
-    rows.push({ device: d, qty: q, base, label: srcName, formula: chainFormulaText(d, base, q), srcName, price: priceOf(d) })
-  })
-  return rows
+  // 字典缺失的原始前端行（保留告警）
+  frontRowList.value.forEach(r => { if (r.missing) out.push({ device: null, rawName: r.rawName, qty: r.qty, label: '点位', price: null, missing: true, warn: '' }) })
+  return out
 })
 
 function priceOf (d) {
@@ -287,6 +234,7 @@ defineExpose({ applyAll, clearDraft })
               <div class="node-info">
                 <div class="node-name">{{ r.device.name }}<span v-if="r.device.spec" class="src"> {{ r.device.spec }}</span></div>
                 <div class="node-src">{{ r.label || '数量手填' }}</div>
+                <div v-if="r.warn" class="node-warn" :title="r.warn"><VIcon name="alert" :size="13" />{{ r.warn }}</div>
               </div>
               <template v-if="r.qty != null">
                 <div class="node-fml">{{ r.formula }}</div>
